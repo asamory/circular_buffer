@@ -42,14 +42,14 @@ size_t n = cbuf_pop_many(&cb, batch, 4096);
 
 ## API
 
-| Function | Called by | Description |
-|---|---|---|
-| `cbuf_init(cb, storage, capacity, elem_size)` | setup | Attach caller-owned storage of `capacity * elem_size` bytes. Returns `false` on bad arguments. |
-| `cbuf_push(cb, elem)` | producer | Copy one element in. Returns `false` and counts a drop if full. |
-| `cbuf_pop_many(cb, out, max)` | consumer | Copy up to `max` elements out. Returns the number copied. |
-| `cbuf_pop(cb, out)` | consumer | Copy one element out. Returns `false` if empty. |
-| `cbuf_size(cb)` | either | Current fill. Approximate while the other side is running. |
-| `cbuf_dropped(cb)` | either | Number of pushes rejected because the buffer was full. |
+| Function                                        | Called by | Description                                                                                        |
+| ----------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| `cbuf_init(cb, storage, capacity, elem_size)` | setup     | Attach caller-owned storage of `capacity * elem_size` bytes. Returns `false` on bad arguments. |
+| `cbuf_push(cb, elem)`                         | producer  | Copy one element in. Returns `false` and counts a drop if full.                                  |
+| `cbuf_pop_many(cb, out, max)`                 | consumer  | Copy up to `max` elements out. Returns the number copied.                                        |
+| `cbuf_pop(cb, out)`                           | consumer  | Copy one element out. Returns `false` if empty.                                                  |
+| `cbuf_size(cb)`                               | either    | Current fill. Approximate while the other side is running.                                         |
+| `cbuf_dropped(cb)`                            | either    | Number of pushes rejected because the buffer was full.                                             |
 
 ## Sizing
 
@@ -72,12 +72,33 @@ This builds into `build/` and runs two programs:
 - `cbuf_test` checks single-threaded correctness: argument validation, FIFO
   order, wraparound and behaviour when full.
 - `log_demo [seconds] [output-file]` runs a producer thread at 60 kHz while the
-  main thread drains the buffer to a binary file about once a millisecond.
+  main thread drains the buffer to a file about once a millisecond.
   Every sample carries a sequence number, so loss or reordering is detected. It
   defaults to 5 seconds and `build/log.bin`.
 
 A typical 5-second run on an Apple silicon Mac logs all 300,000 samples with no
 drops and a peak fill below 3% of the buffer.
+
+## Output format
+
+`log_demo` picks the format from the output file's extension.
+
+- **`.csv`**: text with a header row, one sample per line. The first column
+  labels the row with the sample number; `time_s` is seconds since the first
+  sample.
+
+  sample,time_s,ch0,ch1,ch2,ch3
+  0,0.000000000,0,0,-0,1
+  1,0.000017000,1,0.5,-1,1
+
+  To change the columns, edit `CSV_HEADER` and `csv_write_row()` in
+  `src/log_demo.c`.
+- **anything else**: raw binary, the `sample_t` structs back to back with no
+  header (32 bytes each). Smaller and cheaper to write, but only readable by
+  code using the same struct and byte order.
+
+Formatting happens in the logger thread, after samples leave the buffer, so it
+adds no cost to the producer.
 
 ## Timing on a desktop OS
 

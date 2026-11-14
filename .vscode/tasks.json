@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-debug",
+      "type": "shell",
+      "command": "make -B CFLAGS='-std=c11 -O0 -g -Wall -Wextra -Wpedantic -Iinclude'",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$gcc"
+    }
+  ]
+}

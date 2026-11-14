@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug cbuf_test",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/cbuf_test",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build-debug"
+    },
+    {
+      "name": "Debug log_demo",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/log_demo",
+      "args": ["5", "build/log.bin"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build-debug"
+    }
+  ]
+}

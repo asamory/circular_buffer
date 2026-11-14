@@ -6,6 +6,9 @@
  * whatever accumulated and writes it to a binary file. Every sample carries a
  * sequence number, so any loss or reordering is detected.
  *
+ * Output format follows the file extension: a name ending in .csv gets text
+ * with a header row; anything else gets raw binary sample_t records.
+ *
  * usage: log_demo [seconds] [output-file]
  */
 #include "cbuf.h"
@@ -39,6 +42,30 @@ static uint64_t now_ns(void)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+/* CSV layout. To change the format, edit the header and the row to match.
+ * The first column labels each row; the rest are one column per field. */
+static const char CSV_HEADER[] = "sample,time_s,ch0,ch1,ch2,ch3\n";
+
+static int csv_write_row(FILE *f, const sample_t *s, uint64_t t0_ns)
+{
+    /* time is seconds since the first sample; %.9g keeps a float exact */
+    return fprintf(f, 
+                   "%llu,%.9f,%.9g,%.9g,%.9g,%.9g\n",
+                   (unsigned long long)s->seq, 
+                   (double)(s->t_ns - t0_ns) / 1e9,
+                   s->ch[0], 
+                   s->ch[1], 
+                   s->ch[2], 
+                   s->ch[3]
+                  );
+}
+
+static bool ends_with(const char *s, const char *suffix)
+{
+    size_t n = strlen(s), m = strlen(suffix);
+    return n >= m && strcmp(s + n - m, suffix) == 0;
 }
 
 static void *producer_main(void *arg)
@@ -86,11 +113,14 @@ int main(int argc, char **argv)
         fprintf(stderr, "init failed\n");
         return 1;
     }
-    FILE *f = fopen(path, "wb");
+    bool csv = ends_with(path, ".csv");
+    FILE *f = fopen(path, csv ? "w" : "wb");
     if (!f) {
         perror(path);
         return 1;
     }
+    if (csv)
+        fputs(CSV_HEADER, f);
 
     producer_t prod = { .cb = &cb,
                         .total = (uint64_t)(seconds * SAMPLE_RATE_HZ) };
@@ -98,7 +128,7 @@ int main(int argc, char **argv)
     uint64_t start = now_ns();
     pthread_create(&th, NULL, producer_main, &prod);
 
-    uint64_t logged = 0, expect_seq = 0, seq_errors = 0;
+    uint64_t logged = 0, expect_seq = 0, seq_errors = 0, t0_ns = 0;
     size_t max_fill = 0;
     for (;;) {
         size_t fill = cbuf_size(&cb);
@@ -117,15 +147,27 @@ int main(int argc, char **argv)
                 seq_errors++;
             expect_seq = batch[i].seq + 1;
         }
-        if (fwrite(batch, sizeof *batch, n, f) != n) {
-            perror("fwrite");
+        if (csv) {
+            if (logged == 0)
+                t0_ns = batch[0].t_ns;
+            for (size_t i = 0; i < n; i++)
+                csv_write_row(f, &batch[i], t0_ns);
+        } else {
+            fwrite(batch, sizeof *batch, n, f);
+        }
+        if (ferror(f)) {
+            perror(path);
             return 1;
         }
         logged += n;
     }
     pthread_join(th, NULL);
     double elapsed = (double)(now_ns() - start) / 1e9;
-    fclose(f);
+    long file_bytes = ftell(f);
+    if (fclose(f) != 0) {
+        perror(path);
+        return 1;
+    }
 
     size_t dropped = cbuf_dropped(&cb);
     printf("target rate      : %u Hz\n", SAMPLE_RATE_HZ);
@@ -134,7 +176,7 @@ int main(int argc, char **argv)
     printf("samples produced : %llu\n", (unsigned long long)prod.total);
     printf("samples logged   : %llu  (%.2f MB -> %s)\n",
            (unsigned long long)logged,
-           (double)logged * sizeof(sample_t) / 1e6, path);
+           (double)file_bytes / 1e6, path);
     printf("dropped          : %zu\n", dropped);
     printf("sequence errors  : %llu\n", (unsigned long long)seq_errors);
     printf("max buffer fill  : %zu / %u (%.1f%%)\n", max_fill, RING_CAPACITY,
