@@ -46,8 +46,7 @@ typedef struct {
 } cbuf_t;
 
 /* storage must hold capacity * elem_size bytes. Returns false on bad args. */
-static inline bool cbuf_init(cbuf_t *cb, void *storage, size_t capacity,
-                             size_t elem_size)
+static inline bool cbuf_init(cbuf_t *cb, void *storage, size_t capacity, size_t elem_size)
 {
     if (!cb || !storage || elem_size == 0 || capacity < 2 ||
         (capacity & (capacity - 1)) != 0)

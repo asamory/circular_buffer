@@ -8,6 +8,17 @@ drains them in batches and does the slow work, such as writing to disk. A push
 is a `memcpy` plus one atomic store, with no locks, system calls or allocation,
 so the producer never waits on the logger.
 
+## How it works
+
+![How the circular buffer works](how-it-works.svg)
+
+`head` advances when the producer writes a sample. `tail` advances when the
+consumer drains samples in FIFO order. When either index reaches the end of
+storage, it wraps back to the start.
+
+If `head - tail == capacity`, the buffer is full: the push fails,
+`cbuf_dropped()` increments, and old unread samples are left untouched.
+
 ## Constraints
 
 - **One producer, one consumer.** Exactly one context may push and exactly one

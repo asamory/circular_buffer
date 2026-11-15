@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<!-- how-it-works.html v2.18.1
+     2.18.1: typing a rate no longer moves the rate box (fixed-width readouts, stats on their own row)
+     2.18.0: page tabs are buttons that switch in place (they no longer depend on address links); C++ tab shows the full header, a worked example and its output
+     2.17.0: failure logger on/off switch: when off, faults still latch the flag and count but no window is locked or written
+     2.16.2: simulator page titled "Logger Algo"; its subtitle removed
+     2.16.1: "fault monitor flag" renamed "fault flag"
+     2.16.0: the number of rings is chosen to need the fewest slots, with power-of-two rings kept for speed; pool memory readout
+     2.15.0: navigation bar with a second page showing the buffers as C++14 arrays; rings labelled ring_buffer[i]
+     2.14.0: fault flag latches until a power cycle and counts faults; the fault column carries the count; C and C++ type names (double, float, int, uint8_t ...) accepted; everything older than a written window is cleared; pause before each file write; no automatic download prompt; several faults can be triggered at once
+     2.13.0: the file write is shown: window slots clear one by one, oldest first, as they are written; progress bar per file
+     2.12.0: every fault gets its own file, even back to back while the flag is still up; the file box lists the recent files; the pool is sized so back-to-back faults never run out of rings; locks follow the time window, so the active ring keeps logging through a capture; Step button
+     2.11.0: a fault is always recorded: clearing the flag early no longer cancels the capture; faults close together each get their own file
+     2.10.0: built-in edge-case tests (button at the bottom of the page, or open with #test)
+     2.9.0: push button sits in the centre with the rings arranged around it
+     2.8.0: table card sits to the right of the data logger (rings drawn two per row there); timed fault with optional repeat
+     2.7.1: readout for the largest CSV file a capture can produce
+     2.7.0: slots in the 6 s window are locked from the moment of the fault and only overwritten after the file is written; if no ring may be written, samples are dropped and counted; column hint removed
+     2.6.0: slots per ring and the number of rings are derived from the logging rate and the 6 s window; capacity is no longer set by hand
+     2.5.0: all 5 rings are allocated up front (3 in use, 2 spare); nothing is allocated while logging
+     2.4.0: logging no longer stops on a fault: the rings holding the 6 s window are written to a file while a new ring takes over, then they return to the pool; unused rings are marked inactive; columns can be any header and type; sizes spelled out in bytes
+     2.3.1: counter column removed from the fields, the table and the CSV file
+     2.3.0: fields and heading row are configured in a CSV-style text area; the table can be switched between rings; Play and Pause are one button
+     2.2.0: after a capture, every slot written to the file is highlighted in the rings and the table
+     2.1.0: bigger ring drawing; fault is a single button; configurable header names and per-field types; logging rate up to 60 kHz with capacities up to 131072 slots per ring
+     2.0.0: interactive simulator: play/pause/stop, rate, capacity, data type and channel settings, fault toggle with 3 s + 3 s CSV capture
+     1.5.2: ring[1] -> ring[2] hand-over arrow ends at slot 9 of ring[2]
+     1.5.1: poller card made smaller, text cut to one line
+     1.5.0: push fills one ring until full, then the next; fault monitor flag moved next to the poller card
+     1.4.0: poller listens to fault registers and toggles the default logger via the fault monitor flag
+     1.3.0: storage panel retitled "Default data logger"; fault monitor flag chip added
+     1.2.1: step badge "1" on the push button
+     1.2.0: push button moved inside the storage panel; register poller thread card added
+     1.1.0: producer card replaced by a circular floating push button
+     1.0.0: first web-page version of the circular buffer diagram -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logger Algo</title>
+<style>
+  :root {
+    --ink: #0f172a; --ink2: #334155; --muted: #475569; --line: #cbd5e1; --soft: #e2e8f0;
+    --card: #ffffff; --bg: #eef2ff; --green: #15803d; --green-l: #dcfce7; --red: #b91c1c; --red-l: #fee2e2;
+    --indigo: #4f46e5; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Arial, sans-serif; }
+  main { max-width: 1600px; margin: 0 auto; padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 20px; }
+  main[hidden] { display: none; }
+  .nav { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 20px; background: #ffffff; border-bottom: 2px solid var(--line); }
+  .nav .brand { font-weight: 800; font-size: 17px; margin-right: 12px; }
+  .nav button { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border: 0; border-radius: 12px; background: none; color: var(--ink2); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .nav button:hover { background: #f1f5f9; color: var(--ink); }
+  .nav button[aria-current="page"] { background: var(--indigo); color: #fff; }
+  .arrays { padding: 20px 24px; }
+  .arrays p { margin: 8px 0 12px; font-size: 15px; color: var(--ink2); }
+  .arrays .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .arrays .scroll { max-height: none; }
+  table.map { font-family: inherit; font-size: 15px; }
+  table.map th, table.map td { text-align: left; white-space: normal; padding: 8px 12px; }
+  .arow { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 6px 14px; align-items: center; padding: 8px 0; border-top: 1px solid var(--soft); }
+  .arow:first-child { border-top: 0; }
+  .arow .who { font-size: 14px; color: var(--muted); }
+  .arow .who b { display: block; font-family: var(--mono); font-size: 15px; color: var(--ink); }
+  .cells { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
+  .cells i { flex: 1 0 12px; height: 34px; min-width: 12px; border: 1.5px solid; border-radius: 4px; font-style: normal; font-family: var(--mono); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .cells i.held { box-shadow: 0 0 0 2px #fbbf24; }
+  pre.code { margin: 0; padding: 16px; max-height: 720px; overflow: auto; background: #f8fafc; border: 1.5px solid var(--line); border-radius: 14px; font-family: var(--mono); font-size: 13.5px; line-height: 1.55; color: var(--ink); tab-size: 4; }
+  pre.code .c { color: #475569; font-style: italic; }
+  pre.code .k { color: #4338ca; font-weight: 700; }
+  pre.code .s { color: #9a3412; }
+  pre.code .p { color: #0f766e; }
+  pre.code.out { max-height: none; }
+  .copymsg { font-size: 14px; color: var(--ink2); }
+  header { text-align: center; }
+  h1 { margin: 0; font-size: clamp(26px, 3vw, 40px); font-weight: 800; letter-spacing: -0.03em; }
+  .sub { margin: 8px 0 0; font-size: 17px; color: var(--muted); }
+  h2 { margin: 0; font-size: 22px; font-weight: 800; }
+  h3 { margin: 0 0 8px; font-size: 20px; font-weight: 800; }
+  .card { background: var(--card); border: 2px solid var(--line); border-radius: 24px; box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08); }
+  .mono { font-family: var(--mono); }
+
+  /* toolbar */
+  .bar { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .barrow { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
+  .group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 2px solid var(--line); background: #fff; color: var(--ink);
+    font: inherit; font-weight: 700; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+  .btn svg { width: 16px; height: 16px; }
+  .btn:hover:not(:disabled) { border-color: var(--indigo); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn.primary { background: var(--green); border-color: var(--green); color: #fff; }
+  #play { min-width: 112px; }
+  .btn.small { min-height: 44px; padding: 0 12px; font-size: 14px; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .field select, .field input { min-height: 44px; font: inherit; font-size: 15px; color: var(--ink); }
+  .field select, .field input[type=number], .field input[type=text] { padding: 0 10px; border-radius: 12px; border: 2px solid var(--line); background: #fff; }
+  .field input[type=range] { width: 190px; accent-color: var(--indigo); }
+  .field input[type=number] { width: 110px; font-family: var(--mono); }
+  .field output { color: var(--ink); font-family: var(--mono); }
+  #rateOut { display: inline-block; min-width: 12ch; }          /* fixed widths: changing numbers must not move the controls */
+  .field .sizeout { min-height: 44px; display: flex; align-items: center; font-size: 15px; font-weight: 700; min-width: 58ch; white-space: nowrap; }
+  .hint.sizing { margin: 0; }
+  .inline { display: flex; gap: 8px; align-items: center; }
+  .stats { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--ink2); }
+  .stats b { display: inline-block; min-width: 4ch; }
+  .stats b { font-family: var(--mono); color: var(--ink); }
+  .warn, .warn b { color: var(--red); font-weight: 700; }
+
+  /* field editor */
+  .fields { border-top: 2px solid var(--soft); padding-top: 12px; }
+  .fields-title { display: block; margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  #schema { display: block; width: 100%; min-height: 64px; padding: 10px 12px; border-radius: 12px; border: 2px solid var(--line); background: #f8fafc; color: var(--ink);
+    font-family: var(--mono); font-size: 15px; line-height: 1.5; resize: vertical; white-space: pre; overflow-x: auto; }
+  #schema.bad { border-color: var(--red); }
+  .schema-row { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-size: 14px; color: var(--ink2); }
+  .hint { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+  .seg .btn[aria-pressed="true"] { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+  .seg .btn small { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 9px; background: #e2e8f0; color: var(--ink2); }
+  .seg .btn[data-state="active"] small { background: var(--green-l); color: #14532d; }
+  .seg .btn[data-state="writing"] small { background: #fef3c7; color: #92400e; }
+  .seg .btn[data-state="free"] { border-style: dashed; color: var(--muted); }
+  .seg .btn[data-state="free"][aria-pressed="true"] { color: #fff; }
+  .tblhead { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; justify-content: space-between; }
+
+  /* stage */
+  .stage { display: grid; grid-template-columns: 230px minmax(0, 1fr) minmax(360px, 480px); gap: 24px; align-items: start; }
+  .poller { position: relative; padding: 16px 18px; border-radius: 20px; }
+  .poller .row { display: flex; align-items: center; gap: 10px; }
+  .poller h2 { font-size: 20px; }
+  .chip { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 14px; font-size: 14px; font-weight: 700; background: #e0f2fe; color: #0369a1; }
+  .poller p { margin: 8px 0 12px; font-size: 15px; color: var(--ink2); }
+  .poller::after { content: ""; position: absolute; left: 100%; top: 35px; width: 30px; height: 5px; background: var(--red); border-radius: 3px; }
+  .poller::before { content: ""; position: absolute; left: calc(100% + 26px); top: 26.5px; border: 11px solid transparent; border-left: 16px solid var(--red); border-right: 0; z-index: 2; }
+  #fault { width: 100%; border-color: var(--red); color: var(--red); }
+  #power { width: 100%; margin-top: 10px; }
+  .nrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .nrow .field { font-size: 13px; font-weight: 700; color: var(--muted); }
+  .nrow input { width: 72px; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 2px solid var(--line); font: inherit; font-family: var(--mono); font-size: 15px; color: var(--ink); background: #fff; }
+  .poller .pnote { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  .timer { margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--soft); }
+  .timer .field { margin-bottom: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .timer input[type=number] { width: 84px; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 2px solid var(--line); font: inherit; font-family: var(--mono); font-size: 15px; color: var(--ink); background: #fff; }
+  .timer #arm { flex: 1; }
+  .timer #arm[aria-pressed="true"] { background: var(--ink2); border-color: var(--ink2); color: #fff; }
+  .check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 15px; color: var(--ink2); cursor: pointer; }
+  .check input { width: 20px; height: 20px; accent-color: var(--indigo); }
+  .check:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+  #armMsg { min-height: 20px; font-size: 14px; font-weight: 700; color: var(--red); }
+
+  .logger { padding: 20px; background: linear-gradient(135deg, #ffffff, #f5f3ff); border-radius: 30px; }
+  .logger-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+  .flag { justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 14px; border-radius: 17px;
+    background: #f1f5f9; border: 1.5px solid var(--line); font-size: 15px; font-weight: 700; color: var(--ink2); white-space: nowrap; }
+  .flag svg { width: 16px; height: 20px; }
+  .flag.raised { background: var(--red-l); border-color: var(--red); color: var(--red); }
+  .logger-sub { margin: 8px 0 0; text-align: center; font-size: 16px; color: var(--muted); }
+  .vizwrap { overflow-x: auto; }
+  #viz { display: block; width: 100%; min-width: 560px; max-width: 1000px; height: auto; margin: 6px auto 0; }
+  #viz text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Arial, sans-serif; }
+  #pushBtn { cursor: pointer; outline: none; }
+  #pushBtn:focus-visible .halo { stroke: var(--indigo); stroke-opacity: 1; stroke-width: 4; }
+  #pushBtn[aria-disabled="true"] { cursor: default; }
+  .state { margin: 4px auto 0; width: fit-content; max-width: 100%; padding: 8px 16px; border-radius: 14px; background: #f1f5f9; font-size: 15px; font-weight: 700; color: var(--ink2); text-align: center; }
+  .state.run { background: var(--green-l); color: #14532d; }
+  .state.fault { background: var(--red-l); color: var(--red); }
+  .note { margin: 12px 0 0; text-align: center; font-size: 15px; color: var(--muted); }
+  .legend { margin: 14px auto 0; width: fit-content; max-width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; padding: 12px 20px;
+    border: 2px solid var(--line); border-radius: 18px; background: #fff; font-size: 15px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid; display: inline-block; }
+
+  .tablecard { padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .tablecard p { margin: 4px 0 12px; font-size: 14px; color: var(--muted); }
+  .scroll { max-height: 470px; overflow: auto; border: 1.5px solid #94a3b8; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  th, td { padding: 6px 7px; text-align: right; border-bottom: 1px solid var(--soft); border-left: 1px solid var(--soft); white-space: nowrap; color: var(--ink2); }
+  th { position: sticky; top: 0; background: #e0e7ff; color: var(--ink); font-weight: 700; }
+  th small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+  th:first-child, td:first-child { border-left: 0; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr.head td { background: var(--green-l); }
+  tr.infile td { background: #fef3c7; }
+  tr.infile td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
+  td.f1 { color: var(--red); font-weight: 700; }
+  td .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid; margin-right: 6px; vertical-align: -1px; }
+  .csv { align-self: start; padding: 12px 14px; border-radius: 14px; background: #f8fafc; border: 1.5px solid var(--line); font-size: 14px; color: var(--ink2); }
+  .csv ul { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .csv li { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; }
+  .csv li span { font-size: 13px; color: var(--muted); }
+  .csv .wp { flex-basis: 100%; display: flex; align-items: center; gap: 10px; }
+  .csv progress { flex: 1; height: 10px; accent-color: #f59e0b; }
+  .csv details { margin-top: 10px; }
+  .csv summary { cursor: pointer; font-weight: 700; min-height: 32px; }
+  .csv pre { margin: 8px 0 0; max-height: 260px; overflow: auto; font-family: var(--mono); font-size: 12px; background: #fff; border: 1px solid var(--soft); padding: 8px; }
+
+  .gutter { padding: 22px 28px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 28px; }
+  .gutter > div + div { border-left: 2px solid var(--soft); padding-left: 28px; }
+  .gutter p { margin: 0 0 6px; font-size: 15px; color: var(--ink2); }
+  .tests { padding: 20px 28px; }
+  .tests .row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
+  .tests h3 { margin: 0; }
+  .tests p { margin: 8px 0; font-size: 15px; color: var(--ink2); }
+  .tests ol { margin: 8px 0 0; padding-left: 24px; font-size: 14px; color: var(--ink2); }
+  .tests li { margin: 3px 0; }
+  .tests .pass { color: #14532d; }
+
+  @media (max-width: 1280px) {
+    .stage { grid-template-columns: 230px minmax(0, 1fr); }
+    .tablecard { grid-column: 1 / -1; }
+  }
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: minmax(0, 1fr); }
+    .poller::after, .poller::before { display: none; }
+    .gutter { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; }
+    .gutter > div:nth-child(3) { border-left: 0; padding-left: 0; }
+  }
+  @media (max-width: 620px) {
+    .field .sizeout { min-width: 0; white-space: normal; }
+    .gutter { grid-template-columns: minmax(0, 1fr); }
+    .gutter > div + div { border-left: 0; padding-left: 0; }
+    .logger-head { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+    .flag { justify-self: center; }
+  }
+</style>
+</head>
+<body>
+<nav class="nav" aria-label="Pages">
+  <span class="brand">Circular buffer</span>
+  <button type="button" data-page="sim" aria-current="page">Simulator</button>
+  <button type="button" data-page="cpp">C++14 arrays</button>
+</nav>
+<main id="page-sim">
+  <header>
+    <h1>Logger Algo</h1>
+  </header>
+
+  <section class="card bar" aria-label="Controls">
+    <div class="barrow">
+      <div class="group" role="group" aria-label="Transport">
+        <button class="btn primary" id="play" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg><span id="playText">Play</span></button>
+        <button class="btn" id="step" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l7-5.5zM11 2.5h2.5v11H11z" fill="currentColor"/></svg>Step</button>
+        <button class="btn" id="stop" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" fill="currentColor"/></svg>Stop</button>
+      </div>
+      <div class="group">
+        <div class="field"><label for="rateNum">Logging rate, samples/s (1 to 60000) <output id="rateOut"></output></label>
+          <div class="inline"><input id="rateNum" type="number" min="1" max="60000" step="1" value="8" inputmode="numeric">
+            <input id="rate" type="range" min="0" max="1000" step="1" value="0" aria-label="Logging rate slider"></div></div>
+        <label class="check" for="failLog"><input id="failLog" type="checkbox" checked> Failure logger on</label>
+        <label class="check" for="pauseCap"><input id="pauseCap" type="checkbox" checked> Pause before writing a file</label>
+        <div class="field"><span>Buffer size, set by the rate</span><output class="sizeout" id="sizeOut" for="rateNum rate"></output></div>
+      </div>
+      <div class="stats">
+        <span>sample size <b id="sElem"></b></span>
+        <span>max <abbr title="comma-separated values">CSV</abbr> file <b id="sCsv"></b></span>
+        <span>data rate <b id="sRate"></b></span>
+        <span>pool memory <b id="sMem"></b></span>
+        <span id="sHoldWrap"><span id="sUse"></span> <b id="sHold"></b></span>
+        <span>pool <b id="sPool"></b></span>
+        <span>time <b id="sTime"></b></span>
+        <span>pushed <b id="sTotal"></b></span>
+        <span id="sDropWrap">dropped <b id="sDrop"></b></span>
+      </div>
+    </div>
+    <p class="hint sizing">Speed first: slots per ring stay a power of two, so a slot is found with one mask. Space second: the pool must hold 9 s (3 s before a fault, 3 s after, 3 s to write the file) plus two rings of slack, and the ring count from 3 to 8 that needs the fewest slots in total is used.</p>
+    <div class="fields">
+      <label class="fields-title" for="schema">Sample fields, CSV style: line 1 is the heading row, line 2 is the type of each column</label>
+      <textarea id="schema" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
+      <div class="schema-row"><button class="btn" id="applySchema" type="button">Apply fields</button><span id="schemaMsg" role="status"></span></div>
+    </div>
+  </section>
+
+  <div class="stage">
+    <section class="card poller" aria-label="Fault poller">
+      <div class="row"><h2>Fault poller</h2><span class="chip">thread</span></div>
+      <p>toggles logger on fault</p>
+      <div class="nrow"><label class="field" for="faultN">Faults at once</label><input id="faultN" type="number" min="1" max="20" step="1" value="1" inputmode="numeric"></div>
+      <button class="btn" id="fault" type="button">Trigger fault</button>
+      <button class="btn" id="power" type="button">Power cycle</button>
+      <p class="pnote">Only a power cycle clears the flag and the fault count.</p>
+      <div class="timer">
+        <label class="field" for="faultIn">Timed fault, seconds from now</label>
+        <div class="inline"><input id="faultIn" type="number" min="0.5" max="600" step="0.5" value="5" inputmode="decimal"><button class="btn small" id="arm" type="button" aria-pressed="false">Start</button></div>
+        <label class="check"><input id="repeat" type="checkbox"> repeat</label>
+        <div id="armMsg" role="status"></div>
+      </div>
+    </section>
+
+    <section class="card logger" aria-label="Default data logger">
+      <div class="logger-head">
+        <span class="flag" id="flag"><svg viewBox="0 0 16 20" aria-hidden="true"><path d="M3 1v18M3 2h11l-3 4.5 3 4.5H3" fill="none" stroke="#b91c1c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="flagText">fault flag: clear</span></span>
+        <h2>Default data logger</h2>
+        <span></span>
+      </div>
+      <p class="logger-sub">caller-owned <abbr title="random-access memory">RAM</abbr> • a pool of rings sized from the rate, three in use at a time</p>
+
+      <div class="vizwrap"><svg id="viz" viewBox="0 0 1200 462" role="img" aria-label="A pool of ring buffers arranged around the push button, which writes one sample into the active ring.">
+        <defs>
+          <filter id="soft" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.08"/></filter>
+          <filter id="btnShadow" x="-50%" y="-50%" width="200%" height="220%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.28"/></filter>
+          <marker id="aOn" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L12 6L0 12z" fill="#16a34a"/></marker>
+          <marker id="aOff" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L12 6L0 12z" fill="#cbd5e1"/></marker>
+        </defs>
+        <g id="drops"></g>
+        <g id="rings"></g>
+        <g id="pushBtn" role="button" tabindex="0" aria-label="Push one sample (step 1)">
+          <circle id="pushDisc" cx="70" cy="56" r="38" fill="#15803d" filter="url(#btnShadow)"/>
+          <circle class="halo" cx="70" cy="56" r="38" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+          <text x="70" y="63" text-anchor="middle" font-size="20" font-weight="800" fill="#ffffff">push</text>
+          <circle id="pushBadge" cx="99" cy="29" r="13" fill="#ffffff" stroke="#15803d" stroke-width="2.5"/>
+          <text id="pushBadgeNum" x="99" y="34.5" text-anchor="middle" font-size="15" font-weight="800" fill="#14532d">1</text>
+        </g>
+      </svg></div>
+
+      <div class="state" id="state" role="status"></div>
+      <p class="note">Every ring is allocated up front and three hold data at a time. When the active ring is full, push overwrites the oldest full ring. Slots in a 6 s window are locked from the moment of the fault. The file is written oldest sample first, and each slot is cleared once it is in the file.</p>
+      <div class="legend">
+        <span><i style="background:#86efac;border-color:#059669"></i>next write</span>
+        <span><i style="background:#3730a3;border-color:#312e81"></i>newest</span>
+        <span><i style="background:#c7d2fe;border-color:#818cf8"></i>oldest</span>
+        <span><i style="background:#f1f5f9;border-color:#94a3b8"></i>empty, or cleared once written to the file</span>
+        <span><i style="background:#ffffff;border-color:#b91c1c;border-width:2.5px"></i>logged after the fault</span>
+        <span><i style="background:#818cf8;border-color:#f59e0b;border-width:3px;box-shadow:0 0 0 2px #fbbf24"></i>waiting to be written to the file</span>
+      </div>
+    </section>
+
+    <section class="card tablecard" id="tablecard" aria-label="Ring contents">
+      <div>
+        <div class="tblhead"><h2><span class="mono" id="tblName">ring_buffer[0]</span> as a table</h2>
+          <div class="seg" id="viewSeg" role="group" aria-label="Ring shown in the table">
+            <button class="btn small" type="button" data-view="auto" aria-pressed="true">Follow writes</button>
+            <button class="btn small mono" type="button" data-view="0" aria-pressed="false">ring_buffer[0]</button>
+            <button class="btn small mono" type="button" data-view="1" aria-pressed="false">ring_buffer[1]</button>
+            <button class="btn small mono" type="button" data-view="2" aria-pressed="false">ring_buffer[2]</button>
+          </div></div>
+        <p id="tblNote"></p>
+        <div class="scroll"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+      </div>
+      <div class="csv" id="csvBox" hidden>
+        <div id="csvMsg"></div>
+        <ul id="csvList"></ul>
+        <details><summary>Show the newest file's contents</summary><pre id="csvPre"></pre></details>
+      </div>
+    </section>
+  </div>
+
+  <section class="card gutter" aria-label="Steps">
+    <div><h3>1. Push</h3><p>copy sample into slot <span class="mono">head &amp; mask</span></p><p>publish <span class="mono">head + 1</span></p></div>
+    <div><h3>2. Next ring</h3><p>a ring is full after <span class="mono">capacity</span> pushes</p><p>push then moves on to the next ring</p></div>
+    <div><h3>3. Fault capture</h3><p>3 s after a fault, write 3 s before + 3 s after as CSV</p><p>window slots are cleared as they are written to the file</p></div>
+    <div><h3>4. Rules</h3><p>one producer per ring, no consumer</p><p>power-of-two capacity</p><p>all rings allocated at start, none while logging</p></div>
+  </section>
+
+  <section class="card tests" aria-label="Edge-case tests">
+    <div class="row"><h3>Edge-case tests</h3><button class="btn" id="runTests" type="button">Run edge-case tests</button></div>
+    <p>Runs the simulator through its awkward cases in simulated time (26 tests, a few seconds), then puts the page back as it was.</p>
+    <div id="testOut" role="status"></div>
+  </section>
+</main>
+
+<main id="page-cpp" hidden>
+  <header>
+    <h1>The buffers as C++14 arrays</h1>
+    <p class="sub">Each ring is a fixed array. The pool is an array of rings. Nothing is allocated while logging.</p>
+  </header>
+
+  <section class="card arrays" aria-label="Rings drawn as arrays">
+    <h2>The same rings, drawn as arrays</h2>
+    <p>This is the simulator's pool right now, one row per ring and one cell per slot, index 0 on the left. Run the simulator and come back to see it change.</p>
+    <div id="arrayView"></div>
+  </section>
+
+  <section class="card arrays" aria-label="How the page maps to the code">
+    <h2>From the simulator to the code</h2>
+    <div class="scroll"><table class="map">
+      <thead><tr><th scope="col">In the simulator</th><th scope="col">In the code</th></tr></thead>
+      <tbody>
+        <tr><td>a slot</td><td><span class="mono">time_[i]</span> and <span class="mono">data_[i]</span>, the same index in two arrays</td></tr>
+        <tr><td>one ring</td><td><span class="mono">Ring&lt;Sample, Capacity&gt;</span>: two <span class="mono">std::array</span> members and a write index</td></tr>
+        <tr><td>the pool</td><td><span class="mono">std::array&lt;Ring, Count&gt; ring_buffer_</span> inside <span class="mono">RingPool</span></td></tr>
+        <tr><td>push</td><td><span class="mono">RingPool::push(t, sample)</span>; returns false when a sample is dropped</td></tr>
+        <tr><td>Trigger fault</td><td><span class="mono">raise_fault(t, how_many)</span>: latches the flag, adds to the count, queues one file per fault</td></tr>
+        <tr><td>writing a file, then clearing</td><td><span class="mono">service(now, sink)</span>: sends each 6 s window to <span class="mono">sink</span>, then <span class="mono">clear_before</span></td></tr>
+        <tr><td>Failure logger on / off</td><td><span class="mono">set_failure_logger(bool)</span>: off still latches the flag and counts, but locks and writes nothing</td></tr>
+        <tr><td>buffer size, set by the rate</td><td><span class="mono">cbuf::pool_size(rate)</span>, worked out at compile time</td></tr>
+        <tr><td>Power cycle</td><td><span class="mono">reset()</span>, the only thing that clears the flag and the count</td></tr>
+      </tbody>
+    </table></div>
+    <p>Two differences from the simulator: <span class="mono">service</span> writes a whole file in one call, where the simulator spreads it over 3 s; and the pool reuses the oldest unlocked ring, where the simulator keeps three in use and the rest spare.</p>
+  </section>
+
+  <section class="card arrays" aria-label="C++14 implementation">
+    <div class="row"><h2><span class="mono">ring_pool.hpp</span>, the implementation</h2><button class="btn" type="button" data-copy="cppCode">Copy code</button><span class="copymsg" role="status"></span></div>
+    <p>For the rate set in the simulator, declare the pool as <b class="mono" id="cppSize"></b>, or let <span class="mono">cbuf::pool_size(rate)</span> work it out at compile time.</p>
+    <p>Builds as C++14 with g++ and clang++, warnings treated as errors. A self-check of ten cases passes, including a fault every 0.25 s for 30 s with no dropped samples, and it runs clean under the address and undefined-behaviour sanitizers.</p>
+    <pre class="code"><code id="cppCode">// ring_pool.hpp - C++14 implementation of the buffers shown in the simulator.
+// Every buffer is a plain fixed-size array; nothing is allocated while logging.
+#ifndef RING_POOL_HPP
+#define RING_POOL_HPP
+
+#include &lt;array&gt;
+#include &lt;cstddef&gt;
+#include &lt;cstdint&gt;
+#include &lt;limits&gt;
+
+namespace cbuf {
+
+constexpr double kNever = -std::numeric_limits&lt;double&gt;::infinity();
+constexpr double kForever = std::numeric_limits&lt;double&gt;::infinity();
+
+// Pool size for a logging rate, chosen the way the simulator does it.
+// Speed first: a ring is always a power of two, so a slot is found with one mask.
+// Space second: the pool must hold pre + post + write seconds plus two rings of
+// slack; of the ring counts 3 to 8, the one needing the fewest slots is used.
+struct PoolSize {
+    std::size_t capacity;   // slots per ring
+    std::size_t rings;      // rings in the pool
+};
+
+constexpr PoolSize pool_size(double rate_hz, double pre_s = 3.0, double post_s = 3.0,
+                             double write_s = 3.0) {
+    const double need = (pre_s + post_s + write_s) * rate_hz;
+    PoolSize best{0, 0};
+    for (std::size_t n = 3; n &lt;= 8; ++n) {
+        std::size_t cap = 4;
+        while (static_cast&lt;double&gt;(cap * (n - 2)) &lt; need) cap *= 2;
+        if (best.rings == 0 || n * cap &lt; best.rings * best.capacity) best = PoolSize{cap, n};
+    }
+    return best;
+}
+
+// One ring: two parallel arrays (sample time, sample) and a write index.
+// A slot is live when its time is &gt;= 0; clearing a slot sets its time to -1.
+template &lt;typename Sample, std::size_t Capacity&gt;
+class Ring {
+    static_assert(Capacity &gt;= 2 &amp;&amp; (Capacity &amp; (Capacity - 1)) == 0,
+                  "Capacity must be a power of two");
+
+public:
+    Ring() { time_.fill(-1.0); }
+
+    bool full() const { return head_ == Capacity; }
+    std::size_t live() const { return live_; }
+    double last_time() const { return last_; }   // newest sample of this lap
+
+    // Start a new lap at slot 0. Old slots stay until they are overwritten.
+    void restart() { head_ = 0; last_ = kNever; }
+
+    // Copy one sample into slot (head &amp; mask), then publish head + 1.
+    void push(double t, const Sample&amp; s) {
+        const std::size_t slot = head_ &amp; (Capacity - 1);
+        if (time_[slot] &lt; 0.0) ++live_;
+        time_[slot] = t;
+        data_[slot] = s;
+        last_ = t;
+        ++head_;
+    }
+
+    // Visit the live slots of this lap with lo &lt;= time &lt;= hi, oldest first.
+    template &lt;typename Visit&gt;
+    void for_each_in(double lo, double hi, Visit&amp;&amp; visit) const {
+        for (std::size_t i = 0; i &lt; head_; ++i)
+            if (time_[i] &gt;= lo &amp;&amp; time_[i] &lt;= hi) visit(time_[i], data_[i]);
+    }
+
+    // Clear every live slot older than t (it has been written to a file).
+    void clear_before(double t) {
+        for (std::size_t i = 0; i &lt; Capacity; ++i)
+            if (time_[i] &gt;= 0.0 &amp;&amp; time_[i] &lt; t) { time_[i] = -1.0; --live_; }
+        if (live_ == 0) last_ = kNever;   // a clean ring, free to reuse
+    }
+
+private:
+    std::array&lt;double, Capacity&gt; time_;
+    std::array&lt;Sample, Capacity&gt; data_{};
+    std::size_t head_ = 0;       // next slot to write in this lap
+    std::size_t live_ = 0;       // slots that hold a record
+    double last_ = kNever;
+};
+
+// A pool of Count rings, all allocated up front as one array of arrays.
+// push() fills one ring, then moves to the oldest ring that is not locked.
+// A fault locks the window [fault - pre, fault + post] until service() has
+// handed it to the sink; then the records are cleared.
+template &lt;typename Sample, std::size_t Capacity, std::size_t Count,
+          std::size_t MaxPending = 16&gt;
+class RingPool {
+    static_assert(Count &gt;= 2, "the pool needs at least two rings");
+
+public:
+    explicit RingPool(double pre_s = 3.0, double post_s = 3.0)
+        : pre_(pre_s), post_(post_s) {}
+
+    // Producer: log one sample taken at time t (seconds, never decreasing).
+    // Returns false when every ring is locked: the sample is dropped and counted.
+    bool push(double t, const Sample&amp; s) {
+        if (active_ == kNone || ring_buffer_[active_].full()) {
+            active_ = next_ring();
+            if (active_ == kNone) { ++dropped_; return false; }
+            ring_buffer_[active_].restart();
+        }
+        ring_buffer_[active_].push(t, s);
+        return true;
+    }
+
+    // Failure logger on/off. Off: a fault still latches the flag and adds to the
+    // count, but no window is locked and nothing is written.
+    void set_failure_logger(bool on) { enabled_ = on; }
+    bool failure_logger() const { return enabled_; }
+
+    // A fault occurred at time t. The flag latches (only reset() clears it),
+    // the count goes up, and the fault is queued for its own file.
+    void raise_fault(double t, std::uint32_t how_many = 1) {
+        flag_ = true;
+        fault_count_ += how_many;
+        if (!enabled_) return;
+        for (std::uint32_t i = 0; i &lt; how_many &amp;&amp; pending_ &lt; MaxPending; ++i)
+            fault_at_[pending_++] = t;
+    }
+
+    // Call regularly. For every fault whose post time has passed, sends its
+    // 6 s window to sink(file_number, time, sample), oldest sample first, then
+    // clears every record no later fault still needs. Returns files written.
+    template &lt;typename Sink&gt;
+    std::size_t service(double now, Sink&amp;&amp; sink) {
+        std::size_t files = 0;
+        while (pending_ &gt; 0 &amp;&amp; now &gt;= fault_at_[0] + post_) {
+            const double lo = fault_at_[0] - pre_, hi = fault_at_[0] + post_;
+            ++file_no_;
+            ++files;
+
+            std::array&lt;std::size_t, Count&gt; order;      // rings, oldest data first
+            for (std::size_t i = 0; i &lt; Count; ++i) order[i] = i;
+            for (std::size_t i = 1; i &lt; Count; ++i)    // insertion sort, Count is small
+                for (std::size_t j = i; j &gt; 0 &amp;&amp;
+                     ring_buffer_[order[j]].last_time() &lt; ring_buffer_[order[j - 1]].last_time(); --j) {
+                    const std::size_t tmp = order[j]; order[j] = order[j - 1]; order[j - 1] = tmp;
+                }
+            const std::uint32_t file = file_no_;
+            for (std::size_t i = 0; i &lt; Count; ++i)
+                ring_buffer_[order[i]].for_each_in(lo, hi,
+                    [&amp;](double t, const Sample&amp; s) { sink(file, t, s); });
+
+            for (std::size_t i = 1; i &lt; pending_; ++i) fault_at_[i - 1] = fault_at_[i];
+            --pending_;
+            const double keep_from = pending_ &gt; 0 ? fault_at_[0] - pre_ : kForever;
+            const double clear_to = hi &lt; keep_from ? hi : keep_from;
+            for (std::size_t i = 0; i &lt; Count; ++i) ring_buffer_[i].clear_before(clear_to);
+        }
+        return files;
+    }
+
+    bool fault_flag() const { return flag_; }
+    std::uint32_t fault_count() const { return fault_count_; }
+    std::uint64_t dropped() const { return dropped_; }
+
+    // Power cycle: the only thing that clears the fault flag and the count.
+    void reset() {
+        const bool on = enabled_;
+        *this = RingPool(pre_, post_);
+        enabled_ = on;
+    }
+
+private:
+    static constexpr std::size_t kNone = static_cast&lt;std::size_t&gt;(-1);
+
+    // A ring is locked while it holds a record of a window not yet written.
+    bool locked(std::size_t r) const {
+        return pending_ &gt; 0 &amp;&amp; ring_buffer_[r].last_time() &gt;= fault_at_[0] - pre_;
+    }
+
+    // The oldest ring that is not locked; an empty ring counts as oldest.
+    std::size_t next_ring() const {
+        std::size_t pick = kNone;
+        for (std::size_t r = 0; r &lt; Count; ++r) {
+            if (r == active_ || locked(r)) continue;
+            if (pick == kNone || ring_buffer_[r].last_time() &lt; ring_buffer_[pick].last_time()) pick = r;
+        }
+        return pick;
+    }
+
+    std::array&lt;Ring&lt;Sample, Capacity&gt;, Count&gt; ring_buffer_;   // the whole pool
+    std::array&lt;double, MaxPending&gt; fault_at_{};         // queued fault times
+    std::size_t pending_ = 0;
+    std::size_t active_ = kNone;
+    double pre_, post_;
+    bool flag_ = false;
+    bool enabled_ = true;
+    std::uint32_t fault_count_ = 0;
+    std::uint32_t file_no_ = 0;
+    std::uint64_t dropped_ = 0;
+};
+
+template &lt;typename Sample, std::size_t Capacity, std::size_t Count, std::size_t MaxPending&gt;
+constexpr std::size_t RingPool&lt;Sample, Capacity, Count, MaxPending&gt;::kNone;
+
+}  // namespace cbuf
+
+#endif  // RING_POOL_HPP</code></pre>
+  </section>
+
+  <section class="card arrays" aria-label="C++14 example">
+    <div class="row"><h2><span class="mono">ring_pool_example.cpp</span>, using it</h2><button class="btn" type="button" data-copy="cppExample">Copy code</button><span class="copymsg" role="status"></span></div>
+    <p>Logs 20 s at 8 samples a second, raises one fault at 10 s, and writes that fault's 6 s window to a <abbr title="comma-separated values">CSV</abbr> file.</p>
+    <pre class="code"><code id="cppExample">// ring_pool_example.cpp - logs 20 s of samples at 8 Hz, raises one fault at
+// t = 10 s, and writes its 6 s window to fault_capture_1.csv.
+#include "ring_pool.hpp"
+
+#include &lt;cstdio&gt;
+
+struct Sample {
+    float ch[4];
+    std::uint32_t fault_count;
+};
+
+constexpr double kRate = 8.0;                             // samples per second
+constexpr cbuf::PoolSize kSize = cbuf::pool_size(kRate);  // 16 slots x 7 rings
+
+int main() {
+    // static: the whole pool is one fixed block of memory, no heap
+    static cbuf::RingPool&lt;Sample, kSize.capacity, kSize.rings&gt; pool;
+
+    std::FILE* file = nullptr;
+    std::uint32_t open_no = 0;
+    std::size_t rows = 0;
+
+    // The sink gets every row of every fault file, oldest sample first.
+    auto to_csv = [&amp;](std::uint32_t file_no, double t, const Sample&amp; s) {
+        if (file_no != open_no) {                         // first row of a new file
+            if (file) std::fclose(file);
+            char name[64];
+            std::snprintf(name, sizeof name, "fault_capture_%u.csv", file_no);
+            file = std::fopen(name, "w");
+            open_no = file_no;
+            if (file) std::fputs("time_s,ch0,ch1,ch2,ch3,fault\n", file);
+        }
+        if (!file) return;
+        std::fprintf(file, "%.6f,%.3f,%.3f,%.3f,%.3f,%u\n", t, static_cast&lt;double&gt;(s.ch[0]),
+                     static_cast&lt;double&gt;(s.ch[1]), static_cast&lt;double&gt;(s.ch[2]),
+                     static_cast&lt;double&gt;(s.ch[3]), s.fault_count);
+        ++rows;
+    };
+
+    for (long n = 0; n &lt; 20 * 8; ++n) {
+        const double t = static_cast&lt;double&gt;(n) / kRate;
+        if (n == 80) pool.raise_fault(t);                 // the fault, at t = 10 s
+        pool.push(t, Sample{{static_cast&lt;float&gt;(n), 0, 0, 0}, pool.fault_count()});
+        pool.service(t, to_csv);                          // writes the file at t = 13 s
+    }
+    if (file) std::fclose(file);
+
+    std::printf("%zu slots x %zu rings, %zu rows written, %llu dropped, fault count %u\n",
+                kSize.capacity, kSize.rings, rows,
+                static_cast&lt;unsigned long long&gt;(pool.dropped()), pool.fault_count());
+    return 0;
+}</code></pre>
+    <p>What it prints, and the first and last rows of <span class="mono">fault_capture_1.csv</span> (49 rows plus the heading row):</p>
+    <pre class="code out">16 slots x 7 rings, 49 rows written, 0 dropped, fault count 1
+
+time_s,ch0,ch1,ch2,ch3,fault
+7.000000,56.000,0.000,0.000,0.000,0
+7.125000,57.000,0.000,0.000,0.000,0
+...
+12.875000,103.000,0.000,0.000,0.000,1
+13.000000,104.000,0.000,0.000,0.000,1</pre>
+  </section>
+</main>
+
+
+<script>
+(function () {
+  'use strict';
+  var MINPOOL = 3, MAXPOOL = 8, MINCAP = 4, ROWH = 430, WRITE = 3, PRE = 3, POST = 3, MAXRATE = 60000, MAXFIELDS = 16, MAXBINS = 64, PREVIEW = 200, KEEP = 5;
+  function intType(A, size) { var b = new A(1); return { size: size, cast: function (v) { b[0] = Math.round(v); return b[0]; } }; }
+  var TYPES = {
+    int8: intType(Int8Array, 1), uint8: intType(Uint8Array, 1), int16: intType(Int16Array, 2), uint16: intType(Uint16Array, 2),
+    int32: intType(Int32Array, 4), uint32: intType(Uint32Array, 4),
+    int64: { size: 8, cast: function (v) { return Math.round(v); } }, uint64: { size: 8, cast: function (v) { return Math.max(0, Math.round(v)); } },
+    float32: { size: 4, cast: function (v) { return Math.fround(v); }, float: true },
+    float64: { size: 8, cast: function (v) { return v; }, float: true }
+  };
+  /* C and C++ spellings of the same types */
+  var ALIAS = { double: 'float64', float: 'float32', char: 'int8', short: 'int16', int: 'int32', long: 'int64', bool: 'uint8', size_t: 'uint64' };
+  ['int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64'].forEach(function (n) { ALIAS[n + '_t'] = n; });
+  Object.keys(ALIAS).forEach(function (a) { TYPES[a] = TYPES[ALIAS[a]]; });
+  function canon(type) { return ALIAS[type] || type; }
+  var TYPE_HELP = 'int8, uint8, int16, uint16, int32, uint32, int64, uint64, float32, float64, or the C names (char, short, int, long, float, double, bool, uint8_t ...)';
+
+  /* widest text a value of each type can take in the file: integers at their extremes,
+     floats at their full significant digits (7 for float32, 15 for float64) plus sign and point */
+  var CSVW = { int8: 4, uint8: 3, int16: 6, uint16: 5, int32: 11, uint32: 10, int64: 20, uint64: 20, float32: 9, float64: 17 };
+  /* synthetic signals, before the cast to the field's type */
+  var SIGNALS = [
+    function (t)    { return 100 * Math.sin(2 * Math.PI * 0.5 * t); },
+    function (t)    { return 100 * Math.cos(2 * Math.PI * 0.2 * t); },
+    function (t, n) { return n; },
+    function (t)    { return 1000 * Math.sin(2 * Math.PI * 1.0 * t); }
+  ];
+  var SHADES = [['#3730a3', '#312e81', '#ffffff'], ['#4f46e5', '#3730a3', '#ffffff'], ['#818cf8', '#4f46e5', '#1e1b4b'],
+                ['#a5b4fc', '#6366f1', '#1e1b4b'], ['#c7d2fe', '#818cf8', '#1e1b4b']];
+  var EMPTY = ['#f1f5f9', '#94a3b8', '#475569'], HEADC = ['#86efac', '#059669', '#064e3b'];
+  var CX = [210, 600, 990], CY = 270, R = 180;
+
+  function $(id) { return document.getElementById(id); }
+  var el = { play: $('play'), playIcon: $('playIcon'), playText: $('playText'), step: $('step'), stop: $('stop'), rate: $('rate'), rateNum: $('rateNum'), rateOut: $('rateOut'), sizeOut: $('sizeOut'),
+    schema: $('schema'), applySchema: $('applySchema'), schemaMsg: $('schemaMsg'), viewSeg: $('viewSeg'), power: $('power'), failLog: $('failLog'), arrayView: $('arrayView'),  pageSim: $('page-sim'), pageCpp: $('page-cpp'), faultN: $('faultN'), pauseCap: $('pauseCap'), runTests: $('runTests'), testOut: $('testOut'), fault: $('fault'), faultIn: $('faultIn'), arm: $('arm'), repeat: $('repeat'), armMsg: $('armMsg'), viz: $('viz'), sPool: $('sPool'), sDrop: $('sDrop'), sCsv: $('sCsv'), sDropWrap: $('sDropWrap'),
+    flag: $('flag'), flagText: $('flagText'), rings: $('rings'), drops: $('drops'), push: $('pushBtn'), state: $('state'),
+    tablecard: $('tablecard'), tblName: $('tblName'), tblNote: $('tblNote'), thead: $('thead'), tbody: $('tbody'),
+    csvBox: $('csvBox'), csvMsg: $('csvMsg'), csvList: $('csvList'), csvPre: $('csvPre'),
+    sElem: $('sElem'), sRate: $('sRate'), sHold: $('sHold'), sUse: $('sUse'), sMem: $('sMem'), cppSize: $('cppSize'), sHoldWrap: $('sHoldWrap'), sTime: $('sTime'), sTotal: $('sTotal') };
+
+  /* ---------- configuration: header names and field types ---------- */
+  /* Every column is free: any header, any type. What a column carries is taken from its header:
+     a name like "time" gets the timestamp, a name like "fault" gets the fault flag, anything else a test signal. */
+  var fields = [{ name: 'time_s', type: 'float64' }, { name: 'ch0', type: 'float32' }, { name: 'ch1', type: 'float32' },
+                { name: 'ch2', type: 'float32' }, { name: 'ch3', type: 'float32' }, { name: 'fault', type: 'uint8' }];
+  function srcOf(name) { return /^(t|ts)$|time/i.test(name) ? 'time' : /fault|flt/i.test(name) ? 'fault' : 'sig'; }
+  function sources(fl) { var n = 0; return fl.map(function (f) { var s = srcOf(f.name); return s === 'sig' ? n++ : s; }); }
+  var rate = 8;
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function cleanName(s, fallback) { s = String(s).replace(/[",\r\n]/g, '').trim().slice(0, 24); return s || fallback; }
+  function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+  function fmtRate(r) { return r >= 1000 ? (r / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' kHz' : r + ' Hz'; }
+  function fmtBytes(b) { return b >= 1e6 ? (b / 1e6).toFixed(2) + ' MB' : b >= 1e3 ? (b / 1e3).toFixed(1) + ' kB' : b + ' bytes'; }
+  function fmtDur(s) { return s >= 1 ? s.toFixed(1) + ' s' : (s * 1000).toFixed(s * 1000 >= 10 ? 0 : 1) + ' ms'; }
+
+  var view = 'auto';     /* which ring the table shows: 'auto' follows the ring being written */
+
+  function schemaText() {
+    return fields.map(function (f) { return f.name; }).join(',') + '\n' + fields.map(function (f) { return f.type; }).join(',');
+  }
+  function parseSchema(text) {
+    var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l !== ''; });
+    if (lines.length !== 2) return { err: 'Use exactly two lines: heading row, then types.' };
+    var nm = lines[0].split(',').map(function (s) { return cleanName(s, ''); }), ty = lines[1].split(',').map(function (s) { return s.trim().toLowerCase(); });
+    if (nm.length !== ty.length) return { err: 'Line 1 has ' + nm.length + ' columns but line 2 has ' + ty.length + '.' };
+    if (nm.length > MAXFIELDS) return { err: 'At most ' + MAXFIELDS + ' columns.' };
+    var fl = [];
+    for (var i = 0; i < nm.length; i++) {
+      if (!nm[i]) return { err: 'Column ' + (i + 1) + ' has no name.' };
+      if (nm.indexOf(nm[i]) !== i) return { err: 'The name "' + nm[i] + '" is used twice.' };
+      if (!TYPES[ty[i]]) return { err: 'Column ' + (i + 1) + ': "' + ty[i] + '" is not a type. Use ' + TYPE_HELP + '.' };
+      fl.push({ name: nm[i], type: ty[i] });
+    }
+    return { fields: fl };
+  }
+  function checkSchema() {
+    var p = parseSchema(el.schema.value), same = el.schema.value.trim() === schemaText();
+    el.schema.classList.toggle('bad', !!p.err);
+    el.schemaMsg.className = p.err ? 'warn' : '';
+    el.schemaMsg.textContent = p.err ? p.err : same ? 'In use.' : 'Edited, not applied yet.';
+    el.applySchema.disabled = !!p.err || same;
+    return p;
+  }
+  el.schema.addEventListener('input', checkSchema);
+  function applySchema() {
+    var p = checkSchema(); if (p.err) return p.err;
+    var a = sources(p.fields), b = sources(fields);
+    var structural = p.fields.length !== fields.length || p.fields.some(function (f, i) { return f.type !== fields[i].type || a[i] !== b[i]; });
+    fields = p.fields;
+    el.schema.value = schemaText(); checkSchema();
+    if (structural) reset(); else renderAll();      /* a new layout needs clean storage; a plain rename only changes the heading row */
+    return null;
+  }
+  el.applySchema.addEventListener('click', applySchema);
+  el.viewSeg.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    view = b.dataset.view === 'auto' ? 'auto' : +b.dataset.view;
+    renderTable();
+  });
+
+  /* ---------- simulation ---------- */
+  var S = {}, lastNow = null, segBuilt = 0;
+
+  function newRing(cap, nf) {
+    var ring = { seq: new Float64Array(cap).fill(-1), t: new Float64Array(cap), fault: new Uint8Array(cap), ch: [],
+                 state: 'free', lastSeq: -1, firstT: Infinity, lastT: -Infinity, live: 0, clrT: -Infinity };
+    for (var i = 0; i < nf; i++) ring.ch.push(new Float64Array(cap));
+    return ring;
+  }
+
+  /* Size the buffer from the rate.
+     Speed first: slots per ring are always a power of two, so a slot is found with one mask (head & mask), never a division.
+     Space second: with faults back to back, data up to PRE + POST + WRITE seconds old can be locked at once, and two
+     more rings are needed as slack (the ring being written, and one only partly inside a window). Every ring count
+     from MINPOOL to MAXPOOL is tried with its smallest power-of-two ring, and the one needing the fewest slots in
+     total wins; a tie goes to the fewer rings. */
+  function sizing(r) {
+    var need = (PRE + POST + WRITE) * r, best = null;
+    for (var n = MINPOOL; n <= MAXPOOL; n++) {
+      var cap = MINCAP; while (cap * (n - 2) < need) cap *= 2;
+      if (!best || n * cap < best.total) best = { cap: cap, pool: n, total: n * cap };
+    }
+    best.use = Math.min(best.pool - 1, Math.ceil(PRE * r / best.cap) + 1);   /* rings kept in use so 3 s of history always survives */
+    best.spare = best.pool - best.use;
+    return best;
+  }
+
+  var latch = { flag: false, count: 0 };      /* fault flag and fault count: only a power cycle clears them */
+  function powerCycle() { latch.flag = false; latch.count = 0; reset(); }
+
+  function reset() {
+    var z = sizing(rate), cap = z.cap, POOL = z.pool;
+    S = { status: 'stopped', cap: cap, spare: z.spare, use: z.use, nf: fields.length, rings: [], active: 0, head: 0, total: 0, simT: 0, nextT: 0, dropped: 0, flag: latch.flag, faultCount: latch.count, pend: [], armAt: null, armEvery: 0, jobs: [], files: [], lastJob: null, fileNo: 0,
+      casts: fields.map(function (f) { return TYPES[f.type].cast; }), isFloat: fields.map(function (f) { return !!TYPES[f.type].float; }), src: sources(fields) };
+    for (var r = 0; r < POOL; r++) S.rings.push(newRing(cap, S.nf));      /* the whole pool is allocated here, never while logging */
+    S.rings[0].state = 'active';
+    if (view !== 'auto') view = 'auto';
+    el.csvBox.hidden = true;
+    renderAll();
+  }
+
+  /* The file a ring is waiting on, if any: the first unwritten file whose 6 s window overlaps the ring's samples. */
+  function ringJob(r) {
+    var ring = S.rings[r];
+    for (var j = 0; j < S.jobs.length; j++) if (ring.lastT >= S.jobs[j].lo && ring.firstT <= S.jobs[j].hi) return S.jobs[j];
+    return null;
+  }
+  /* A ring is locked while it holds any slot of a 6 s window that has not been written to its file yet:
+     from the moment of the fault (pending window) until the file write is done. */
+  function locked(r) {
+    return !!ringJob(r) || (S.pend.length > 0 && S.rings[r].lastT >= S.pend[0] - PRE - 1e-9);
+  }
+  /* Keep at most S.use rings in use: older full rings that nothing is waiting on go back to the pool as inactive. */
+  function trim() {
+    for (;;) {
+      var inUse = 0, old = -1, oT = Infinity;
+      for (var r = 0; r < S.rings.length; r++) {
+        var st = S.rings[r].state; if (st === 'free') continue;
+        inUse++;
+        if (st === 'used' && !locked(r) && S.rings[r].lastT < oT) { oT = S.rings[r].lastT; old = r; }
+      }
+      if (inUse <= S.use || old < 0) return;
+      S.rings[old].state = 'free';
+    }
+  }
+
+  /* The active ring is full: pick the ring that takes over.
+     Up to S.use rings hold live data. Below that, take an inactive ring from the pool; at that number,
+     overwrite the oldest full ring. A locked ring is never picked. If nothing may be written, there is
+     no active ring and samples are dropped until one is released. */
+  function switchRing() {
+    var cur = S.active, free = -1, old = -1, fT = Infinity, uT = Infinity, inUse = 0, r;
+    for (r = 0; r < S.rings.length; r++) {
+      var st = S.rings[r].state;
+      if (st === 'used') inUse++;
+      if (r === cur || locked(r)) continue;
+      if (st === 'free' && S.rings[r].lastT < fT) { fT = S.rings[r].lastT; free = r; }
+      if (st === 'used' && S.rings[r].lastT < uT) { uT = S.rings[r].lastT; old = r; }
+    }
+    var pick = (inUse < S.use && free >= 0) ? free : old >= 0 ? old : free >= 0 ? free : (cur >= 0 && !locked(cur)) ? cur : -1;
+    S.active = pick; S.head = 0;
+    if (pick >= 0) S.rings[pick].state = 'active';
+    trim();
+  }
+
+  function push(t) {
+    if (S.active < 0) { switchRing(); if (S.active < 0) { S.dropped++; return; } }   /* every ring is locked: drop and count */
+    var ring = S.rings[S.active], k = S.head;
+    if (ring.seq[k] < 0) ring.live++;                           /* an empty slot becomes a live record */
+    var flt = S.faultCount;                                     /* the fault column is the fault count at the moment of the sample */
+    ring.seq[k] = S.total; ring.t[k] = t; ring.fault[k] = S.pend.length ? 1 : 0;   /* marks samples logged in the 3 s after a fault */
+    for (var i = 0; i < S.nf; i++) {
+      var s = S.src[i];
+      ring.ch[i][k] = S.casts[i](s === 'time' ? (S.isFloat[i] ? t : t * 1e9)       /* seconds, or nanoseconds in an integer column */
+                               : s === 'fault' ? flt : SIGNALS[s % SIGNALS.length](t, S.total));
+    }
+    if (k === 0) ring.firstT = t;                               /* a new lap of this ring starts here */
+    ring.lastSeq = S.total; ring.lastT = t; S.total++; S.head++;
+    if (S.head === S.cap) { ring.state = 'used'; switchRing(); }
+  }
+
+  /* A fault occurred at time t: latch the flag, count it and queue a capture. Every fault gets its own capture
+     and its own file 3 s later, even when faults come back to back. */
+  function raiseFault(t, n) {
+    n = n || 1;
+    S.flag = latch.flag = true;                                  /* latched: stays up until a power cycle */
+    S.faultCount = latch.count = S.faultCount + n;
+    if (!el.failLog.checked) return;                             /* failure logger off: the fault is counted, nothing is captured */
+    for (var i = 0; i < n; i++) S.pend.push(t);                  /* every fault is queued for its own file, also when several arrive at once */
+  }
+
+  function advance(dt) {
+    var step = 1 / rate, target = S.simT + dt, pushed = false;
+    function runTo(T) { while (S.nextT <= T + 1e-9) { push(S.nextT); S.nextT += step; pushed = true; } if (T > S.simT) S.simT = T; }
+    for (;;) {                                                        /* handle timer and capture events in time order */
+      var tArm = S.armAt !== null ? S.armAt : Infinity, tCap = S.pend.length ? S.pend[0] + POST : Infinity;
+      if (Math.min(tArm, tCap) > target + 1e-9) break;
+      if (tArm <= tCap) {                                             /* the timed fault is due */
+        runTo(tArm);
+        raiseFault(tArm, faultN());
+        S.armAt = el.repeat.checked ? tArm + S.armEvery : null;
+      } else {                                                        /* 3 s after a fault: hand its window to a file, keep logging */
+        runTo(tCap); capture(S.pend.shift());
+        if (S.pend.length && S.pend[0] + POST <= S.simT + 1e-9) continue;        /* more faults from the same instant: capture them all first */
+        if (el.pauseCap.checked && !quiet && S.status === 'running') { S.status = 'paused'; S.heldJob = S.lastJob; return true; }   /* stop here so the full window can be inspected */
+      }
+      pushed = true;
+    }
+    runTo(target);
+    if (S.jobs.length) { writeFiles(); pushed = true; }
+    for (var j = S.jobs.length - 1; j >= 0; j--) if (S.jobs[j].until <= S.simT + 1e-9) { S.jobs[j].done = true; S.jobs.splice(j, 1); release(); pushed = true; }
+    return pushed;
+  }
+
+  function fmtVal(v, i, d) { return S.isFloat[i] ? v.toFixed(S.src[i] === 'time' ? Math.max(d, rate > 1000 ? 6 : 3) : d).replace(/^-(0\.0+)$/, '$1') : String(v); }
+
+  /* Hand the 6 s window to a file. Its slots stay locked until the file is written; the active ring keeps logging in its free slots. */
+  function capture(f) {
+    var lo = f - PRE - 1e-9, hi = f + POST + 1e-9, i, r, k, cap = S.cap, idx = [], count = {};
+    for (r = 0; r < S.rings.length; r++) {
+      var g = S.rings[r];
+      for (k = 0; k < cap; k++) if (g.seq[k] >= 0 && g.t[k] >= lo && g.t[k] <= hi) { idx.push(r * cap + k); count[r] = (count[r] || 0) + 1; }
+    }
+    idx.sort(function (a, b) { return S.rings[(a / cap) | 0].t[a % cap] - S.rings[(b / cap) | 0].t[b % cap]; });   /* oldest to newest */
+    var lines = [fields.map(function (x) { return x.name; }).join(',')], first = null, last = null;
+    for (var n = 0; n < idx.length; n++) {
+      var ring = S.rings[(idx[n] / cap) | 0]; k = idx[n] % cap;
+      var row = '';
+      for (i = 0; i < S.nf; i++) row += (i ? ',' : '') + fmtVal(ring.ch[i][k], i, S.src[i] === 'time' ? 6 : 3);
+      lines.push(row);
+      if (first === null) first = ring.t[k]; last = ring.t[k];
+    }
+    var csv = lines.join('\n') + '\n', before = first === null ? 0 : Math.max(0, f - first), after = last === null ? 0 : Math.max(0, last - f);
+    var job = { no: ++S.fileNo, name: 'fault_capture_' + S.fileNo + '.csv', at: f, lo: lo, hi: hi, start: S.simT, cursor: lo, until: S.simT + WRITE, rings: [], count: count, csv: csv,
+      rows: lines.length - 1, before: before, after: after, short: before < PRE - 1 / rate - 1e-6, bytes: csv.length,
+      preview: lines.slice(0, PREVIEW + 1).join('\n') + (lines.length - 1 > PREVIEW ? '\n… ' + fmtInt(lines.length - 1 - PREVIEW) + ' more rows in the file' : '') };
+    for (r = 0; r < S.rings.length; r++) if (count[r]) job.rings.push(r);
+    S.jobs.push(job); S.lastJob = job;
+    showCsv(job);                                             /* the file is listed with a Download button; nothing is saved without asking */
+  }
+
+  /* Each file is written oldest sample first, over WRITE seconds. A record is cleared as soon as it has been
+     written, unless a later fault still needs it for its own file: then it stays until that file has it too. */
+  function writeFiles() {
+    for (var j = 0; j < S.jobs.length; j++) {
+      var job = S.jobs[j];
+      job.cursor = Math.min(job.hi, job.lo + (S.simT - job.start) / WRITE * (job.hi - job.lo));
+      var keepFrom = S.pend.length ? S.pend[0] - PRE - 1e-9 : Infinity;                 /* earliest time something else still needs */
+      for (var o = 0; o < S.jobs.length; o++) if (o !== j && S.jobs[o].cursor < S.jobs[o].hi) keepFrom = Math.min(keepFrom, Math.max(S.jobs[o].lo, S.jobs[o].cursor));
+      clearSlots(Math.min(job.cursor, keepFrom));
+    }
+  }
+  /* Clear every record older than time b: what the file has just written, and anything older still, which no
+     later fault can need. Sample times only go up along a ring, so each ring resumes by bisection from where it stopped. */
+  function clearSlots(b) {
+    for (var r = 0; r < S.rings.length; r++) {
+      var ring = S.rings[r], T = ring.t;
+      if (ring.live === 0 || !(b > ring.clrT)) continue;
+      var segs = r === S.active ? [[0, S.head], [S.head, S.cap]] : [[0, S.cap]];      /* current lap, then what is left of the lap before */
+      for (var s = 0; s < segs.length; s++) {
+        var lo = segs[s][0], hi = segs[s][1], end = hi;
+        while (lo < hi) { var m = (lo + hi) >> 1; if (T[m] < ring.clrT) lo = m + 1; else hi = m; }
+        for (var k = lo; k < end && T[k] < b; k++) if (ring.seq[k] >= 0) { ring.seq[k] = -1; ring.live--; }
+      }
+      ring.clrT = b;
+      if (r !== S.active && ring.live === 0) {                   /* nothing left in it: a clean ring, back in the pool */
+        ring.state = 'free'; ring.lastSeq = -1; ring.firstT = Infinity; ring.lastT = -Infinity;
+      }
+    }
+  }
+
+  /* A file is finished: its window is unlocked. Rings nothing is waiting on go back to the pool. */
+  function release() { trim(); }
+
+  function showCsv(job) {
+    S.files.unshift(job); if (S.files.length > KEEP) S.files.pop().csv = null;      /* keep the newest few files for download */
+    el.csvMsg.innerHTML = '<b>Wrote ' + job.name + ':</b> ' + fmtInt(job.rows) + ' rows (' + fmtBytes(job.bytes) + '), ' + job.before.toFixed(1) + ' s before the fault and ' + job.after.toFixed(1) + ' s after.' +
+      (job.short ? ' <span class="warn">Less than 3 s of pre-fault data was still in the rings.</span>' : '') +
+      (S.fileNo > 1 ? ' ' + S.fileNo + ' files so far, one per fault.' : '');
+    el.csvList.innerHTML = S.files.map(function (j) {
+      return '<li><button class="btn small" type="button" data-no="' + j.no + '">Download ' + j.name + '</button><span>fault at ' + j.at.toFixed(2) + ' s, ' + fmtInt(j.rows) + ' rows</span>' +
+        '<label class="wp"><progress max="100" value="0" data-p="' + j.no + '"></progress><span data-pt="' + j.no + '"></span></label></li>';
+    }).join('');
+    el.csvPre.textContent = job.preview;
+    el.csvBox.hidden = false;
+  }
+
+  function download(job) {
+    if (!job || !job.csv || quiet) return;
+    try {
+      var url = URL.createObjectURL(new Blob([job.csv], { type: 'text/csv' }));
+      var a = document.createElement('a'); a.href = url; a.download = job.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    } catch (e) { /* the preview still shows the file */ }
+  }
+
+  /* ---------- rendering ---------- */
+  function shadeOf(seq) { return SHADES[Math.max(0, Math.min(4, Math.floor(((S.total - 1 - seq) / (S.use * S.cap)) * 5)))]; }
+  function slotLook(r, k) {
+    if (r === S.active && k === S.head) return HEADC;
+    var seq = S.rings[r].seq[k];
+    return seq < 0 ? EMPTY : shadeOf(seq);
+  }
+  /* is this slot held for a file: in a window that is pending (fault raised) or still being written? */
+  function inFile(r, k) {
+    var ring = S.rings[r]; if (ring.seq[k] < 0) return false;
+    var t = ring.t[k];
+    for (var j = 0; j < S.jobs.length; j++) if (t >= S.jobs[j].lo && t <= S.jobs[j].hi) return true;
+    return S.pend.length > 0 && t >= S.pend[0] - PRE - 1e-9;
+  }
+  /* hub layout: push in the centre, the rings evenly spaced on a circle around it, ring[0] at the top */
+  function hub() {
+    var n = S.rings.length, D = Math.max(300, (2 * R + 34) / (2 * Math.sin(Math.PI / n))), half = D + R + 22;
+    return { n: n, D: D, c: half, size: 2 * half };
+  }
+  function ringAngle(r, n) { return -Math.PI / 2 + r * 2 * Math.PI / n; }
+  function ringXY(r) { var h = hub(), a = ringAngle(r, h.n); return [h.c + h.D * Math.cos(a), h.c + h.D * Math.sin(a)]; }
+
+  function renderRings() {
+    var cap = S.cap, nb = Math.min(cap, MAXBINS), per = cap / nb, out = '', drops = '', n = S.rings.length;
+    var w = nb <= 8 ? 46 : nb === 16 ? 36 : nb === 32 ? 22 : 11, rx = Math.min(12, w / 2.4);
+    var H = hub(), kf = Math.max(1, H.size / 1040), fs = Math.round(15 * kf), fName = Math.min(25, Math.round(19 * kf)), fNote = Math.min(17, Math.round(15 * kf));
+    el.viz.setAttribute('viewBox', '0 0 ' + H.size.toFixed(0) + ' ' + H.size.toFixed(0));
+    el.push.setAttribute('transform', 'translate(' + (H.c - 70).toFixed(1) + ' ' + (H.c - 56).toFixed(1) + ')');
+    for (var r = 0; r < n; r++) {
+      var ring = S.rings[r], xy = ringXY(r), on = r === S.active, job = ringJob(r), wr = !!job && !on, lk = !on && locked(r);
+      var ang0 = ringAngle(r, n), ux = Math.cos(ang0), uy = Math.sin(ang0), r0 = 46, r1 = H.D - R - 10;      /* spoke from the push button to this ring */
+      drops += '<path d="M ' + (H.c + ux * r0).toFixed(1) + ' ' + (H.c + uy * r0).toFixed(1) + ' L ' + (H.c + ux * r1).toFixed(1) + ' ' + (H.c + uy * r1).toFixed(1) + '" fill="none" stroke="' + (on ? '#16a34a' : '#cbd5e1') + '" stroke-width="' + (on ? 6 : 3) + '" stroke-linecap="round" marker-end="url(#' + (on ? 'aOn' : 'aOff') + ')"/>';
+      var edge = on ? '#86efac' : lk ? '#f59e0b' : '#e2e8f0';
+      var g = '<g transform="translate(' + xy[0] + ' ' + xy[1] + ')"' + (ring.state === 'free' && !lk ? ' opacity="0.55"' : '') + '><circle r="' + R + '" fill="#ffffff" stroke="' + edge + '" stroke-width="' + (on || lk ? 4 : 2) + '" filter="url(#soft)"/>', nums = '', inner = '', count = 0;
+      for (var b = 0; b < nb; b++) {
+        var k0 = b * per, kl = k0 + per - 1, isHead = on && S.head >= k0 && S.head <= kl;
+        var c = isHead ? HEADC : slotLook(r, kl), flt = !isHead && ring.seq[kl] >= 0 && ring.fault[kl] === 1, ang = b * 360 / nb, a = ang * Math.PI / 180;
+        var inf = !isHead && (inFile(r, kl) || inFile(r, k0)), dim = wr && !inf ? ' opacity="0.3"' : '';
+        g += '<g transform="rotate(' + ang + ')"' + dim + '>' + (inf ? '<rect x="' + (-w / 2 - 4) + '" y="-175" width="' + (w + 8) + '" height="62" rx="' + (rx + 3) + '" fill="#fbbf24"/>' : '') +
+          '<rect x="' + (-w / 2) + '" y="-170" width="' + w + '" height="52" rx="' + rx + '" fill="' + c[0] + '" stroke="' + (flt ? '#b91c1c' : c[1]) + '" stroke-width="' + (flt ? (nb > 32 ? 2 : 3) : (isHead ? 3.5 : 2)) + '"/></g>';
+        if (nb <= 16) nums += '<text x="' + (144 * Math.sin(a)).toFixed(1) + '" y="' + (-144 * Math.cos(a) + fs * 0.36).toFixed(1) + '" text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="' + c[2] + '"' + dim + '>' + k0 + '</text>';
+        else if (b % (nb === 32 ? 4 : 8) === 0 && ang !== 90 && ang !== 270) inner += '<text x="' + (90 * Math.sin(a)).toFixed(1) + '" y="' + (-90 * Math.cos(a) + 4).toFixed(1) + '" text-anchor="middle" font-size="13" font-weight="700" fill="#475569">' + (k0 >= 10000 ? Math.round(k0 / 1000) + 'k' : fmtInt(k0)) + '</text>';
+      }
+      var note = on ? 'active, next write: slot ' + fmtInt(S.head)
+        : wr ? 'writing to file ' + job.no + ', ' + Math.round(100 * (job.cursor - job.lo) / (job.hi - job.lo)) + '%'
+        : lk ? 'locked until the file is written' : ring.state === 'free' ? 'inactive, in the pool' : 'full';
+      var extra = [];
+      if (per > 1) extra.push('1 bar = ' + fmtInt(per) + ' slots');
+      g += nums + '<circle r="112" fill="#f8fafc" stroke="#dbeafe" stroke-width="2"/>' + inner +
+        '<text y="-8" text-anchor="middle" font-size="' + fName + '" font-weight="700" fill="#0f172a" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ring_buffer[' + r + ']</text>' +
+        '<text y="' + (14 + fNote * 0.4) + '" text-anchor="middle" font-size="' + fNote + '" font-weight="' + (wr ? 700 : 400) + '" fill="' + (wr ? '#92400e' : '#475569') + '">' + note + '</text>';
+      extra.forEach(function (x, i) { g += '<text y="' + (40 + i * 17) + '" text-anchor="middle" font-size="12" fill="#475569">' + x + '</text>'; });
+      out += g + '</g>';
+    }
+    el.rings.innerHTML = out; el.drops.innerHTML = drops;
+  }
+
+  function renderSeg() {
+    var n = S.rings.length;
+    if (view !== 'auto' && view >= n) view = 'auto';
+    if (segBuilt !== n) {
+      var h = '<button class="btn small" type="button" data-view="auto">Follow writes</button>';
+      for (var r = 0; r < n; r++) h += '<button class="btn small" type="button" data-view="' + r + '"><span class="mono">ring_buffer[' + r + ']</span><small></small></button>';
+      el.viewSeg.innerHTML = h; segBuilt = n;
+    }
+    var LABEL = { active: 'active', used: 'full', writing: 'locked', free: 'inactive' };
+    Array.prototype.forEach.call(el.viewSeg.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.view === String(view)));
+      if (b.dataset.view === 'auto') return;
+      var r = +b.dataset.view, st = S.rings[r].state;
+      if (st !== 'active' && locked(r)) st = 'writing';
+      b.dataset.state = st; b.querySelector('small').textContent = LABEL[st];
+    });
+  }
+
+  function renderTable() {
+    renderSeg();
+    var r = view === 'auto' ? Math.max(0, S.active) : view, ring = S.rings[r], cap = S.cap, i, k, active = r === S.active;
+    var h = '<tr><th scope="col">slot</th>';
+    for (i = 0; i < S.nf; i++) h += '<th scope="col">' + esc(fields[i].name) + '<small>' + fields[i].type + '</small></th>';
+    el.thead.innerHTML = h + '</tr>';
+    el.tblName.textContent = 'ring_buffer[' + r + ']';
+    var rows = cap <= 32 ? cap : 16, start = (cap <= 32 || !active) ? 0 : Math.max(0, Math.min(cap - rows, S.head - 12));
+    var which = view === 'auto' ? 'The ring being written' : active ? 'This ring is being written'
+      : locked(r) ? 'This ring is locked; highlighted rows are held until their file is written'
+      : ring.state === 'free' ? 'This ring is inactive, in the pool' : 'This ring is full and holds history';
+    el.tblNote.textContent = which + (cap <= 32 ? ', one row per slot.' : ': slots ' + fmtInt(start) + ' to ' + fmtInt(start + rows - 1) + ' of ' + fmtInt(cap) + (active ? ', around the next write.' : '.')) + ' Values are rounded here; the file keeps more digits.';
+    var b = '';
+    for (k = start; k < start + rows; k++) {
+      var c = slotLook(r, k), isHead = c === HEADC, seq = ring.seq[k];
+      b += '<tr' + (isHead ? ' class="head"' : inFile(r, k) ? ' class="infile"' : '') + '><td><span class="sw" style="background:' + c[0] + ';border-color:' + c[1] + '"></span>' + fmtInt(k) + '</td>';
+      if (seq >= 0) {
+        for (i = 0; i < S.nf; i++) b += '<td' + (S.src[i] === 'fault' && ring.ch[i][k] ? ' class="f1"' : '') + '>' + fmtVal(ring.ch[i][k], i, 2) + '</td>';
+        b += '</tr>';
+      } else { for (i = 0; i < S.nf; i++) b += '<td></td>'; b += '</tr>'; }
+    }
+    el.tbody.innerHTML = b;
+  }
+
+  function renderStatus() {
+    var elem = 0, i; for (i = 0; i < fields.length; i++) elem += TYPES[fields[i].type].size;
+    var hold = S.use * S.cap / rate, fault = S.flag, tooSmall = false, idle = S.rings.filter(function (x) { return x.state === 'free'; }).length;
+    el.rateOut.textContent = '= ' + fmtRate(rate);
+    el.sizeOut.textContent = fmtInt(S.cap) + ' slots × ' + S.rings.length + ' rings = ' + fmtInt(S.cap * S.rings.length) + ' slots (' + S.use + ' in use + ' + S.spare + ' spare)';
+    el.sUse.textContent = S.use + ' rings in use hold';
+    el.cppSize.textContent = 'RingPool<Sample, ' + S.cap + ', ' + S.rings.length + '>';
+    el.sElem.textContent = elem + (elem === 1 ? ' byte' : ' bytes');
+    el.sMem.textContent = fmtBytes(elem * S.cap * S.rings.length);
+    el.sCsv.textContent = fmtBytes(csvMax());
+    el.sRate.textContent = fmtBytes(elem * rate) + '/s';
+    el.sHold.textContent = fmtDur(hold) + (tooSmall ? ' (need 6 s)' : '');
+    el.sHoldWrap.className = tooSmall ? 'warn' : '';
+    el.sPool.textContent = S.rings.length + ' rings (' + idle + ' inactive)';
+    el.sTime.textContent = S.simT.toFixed(1) + ' s';
+    el.sTotal.textContent = fmtInt(S.total);
+    el.sDrop.textContent = fmtInt(S.dropped); el.sDropWrap.className = S.dropped ? 'warn' : '';
+
+    var running = S.status === 'running', parts = [], cls = 'state';
+    if (running) { parts.push('Logging at ' + fmtRate(rate)); cls += ' run'; }
+    else if (S.status === 'paused' && S.heldJob && S.jobs.indexOf(S.heldJob) >= 0 && S.heldJob.cursor <= S.heldJob.lo) { parts.push('Paused: the 6 s window is complete (' + fmtInt(S.heldJob.rows) + ' rows). Press Play to write ' + (S.jobs.length > 1 ? S.jobs.length + ' files, one per fault.' : 'it to the file.')); cls = 'state fault'; }
+    else if (S.status === 'paused') parts.push('Paused. Press Play to continue, or Step to push one sample.');
+    else parts.push('Stopped. Press Play, or Step to push one sample.');
+    if (!el.failLog.checked) parts.push('Failure logger off: faults are counted, not written to a file.');
+    if (S.active < 0) { parts.push('Every ring is locked for a file: dropping samples.'); cls = 'state fault'; }
+    if (S.pend.length) { parts.push('Fault ' + (S.faultCount - S.pend.length + 1) + ': recording ' + Math.max(0, S.pend[0] + POST - S.simT).toFixed(1) + ' s more, then writing file ' + (S.fileNo + 1) + (S.pend.length > 1 ? ' (' + (S.pend.length - 1) + ' more ' + (S.pend.length > 2 ? 'faults' : 'fault') + ' queued, one file each).' : '.')); cls = 'state fault'; }
+    var held = S.status === 'paused' && S.heldJob && S.jobs.indexOf(S.heldJob) >= 0 && S.heldJob.cursor <= S.heldJob.lo;
+    if (S.jobs.length && !held) {
+      var j0 = S.jobs[0], pc = Math.round(100 * (j0.cursor - j0.lo) / (j0.hi - j0.lo));
+      parts.push((S.jobs.length > 1 ? 'Writing ' + S.jobs.length + ' files, ' + j0.name + ' at ' + pc + '%' : 'Writing ' + j0.name + ': ' + pc + '%') + '; records clear as they are written.');
+    }
+    el.state.textContent = parts.join(' '); el.state.className = cls;
+    (S.files || []).forEach(function (j) {                                /* progress of each listed file */
+      var bar = el.csvList.querySelector('[data-p="' + j.no + '"]'), txt = el.csvList.querySelector('[data-pt="' + j.no + '"]');
+      if (!bar) return;
+      var pc = j.done ? 100 : Math.round(100 * (j.cursor - j.lo) / (j.hi - j.lo));
+      bar.value = pc; txt.textContent = j.done ? 'written, slots cleared' : 'writing ' + pc + '%';
+    });
+
+    var armed = S.armAt !== null;
+    el.arm.setAttribute('aria-pressed', armed ? 'true' : 'false');
+    el.arm.textContent = armed ? 'Cancel' : 'Start';
+    el.armMsg.textContent = armed ? 'fault in ' + Math.max(0, S.armAt - S.simT).toFixed(1) + ' s' + (el.repeat.checked ? ', repeating' : '') + (S.status === 'running' ? '' : ' (press Play)') : '';
+    el.flag.className = 'flag' + (fault ? ' raised' : '');
+    el.fault.textContent = faultN() > 1 ? 'Trigger ' + faultN() + ' faults' : 'Trigger fault';
+    el.flagText.textContent = 'fault flag: ' + (fault ? 'raised, ' + S.faultCount + (S.faultCount === 1 ? ' fault' : ' faults') : 'clear');
+    el.pauseCap.disabled = !el.failLog.checked;                          /* nothing to pause for when no file is written */
+    el.power.disabled = !fault && S.total === 0 && !S.pend.length;
+    el.playText.textContent = running ? 'Pause' : 'Play';               /* one button: Play when idle, Pause while logging */
+    el.playIcon.setAttribute('d', running ? 'M4 2.5h3v11H4zM9 2.5h3v11H9z' : 'M4 2.5v11l9-5.5z');
+    el.step.disabled = running;                                         /* stepping is for when the logger is not running */
+    el.stop.disabled = S.status === 'stopped' && S.total === 0 && !S.pend.length;
+    el.push.setAttribute('aria-disabled', running ? 'true' : 'false');
+  }
+
+  /* largest file a capture can produce: heading row + one widest-possible row per sample in 6 s */
+  function csvMax() {
+    var rowMax = fields.length, headLen = fields.length, i;               /* commas and the line break */
+    for (i = 0; i < fields.length; i++) { rowMax += CSVW[canon(fields[i].type)]; headLen += fields[i].name.length; }
+    return headLen + (Math.floor((PRE + POST) * rate) + 1) * rowMax;
+  }
+
+  /* the pool as rows of array cells, for the C++ page */
+  function renderArrays() {
+    if (el.pageCpp.hidden) return;
+    var cap = S.cap, nb = Math.min(cap, MAXBINS), per = cap / nb, h = '';
+    for (var r = 0; r < S.rings.length; r++) {
+      var ring = S.rings[r], on = r === S.active, st = on ? 'active, next write at index ' + fmtInt(S.head) : locked(r) ? 'locked for a file' : ring.state === 'free' ? 'inactive' : 'full';
+      h += '<div class="arow"><div class="who"><b>ring_buffer[' + r + ']</b>' + st + '</div><div class="cells">';
+      for (var b = 0; b < nb; b++) {
+        var k0 = b * per, kl = k0 + per - 1, isHead = on && S.head >= k0 && S.head <= kl, c = isHead ? HEADC : slotLook(r, kl), held = !isHead && (inFile(r, kl) || inFile(r, k0));
+        h += '<i' + (held ? ' class="held"' : '') + ' style="background:' + c[0] + ';border-color:' + c[1] + ';color:' + c[2] + '">' + (nb <= 32 ? k0 : '') + '</i>';
+      }
+      h += '</div></div>';
+    }
+    el.arrayView.innerHTML = h + (per > 1 ? '<p>Each cell stands for ' + fmtInt(per) + ' slots.</p>' : '');
+  }
+
+  function renderData() { renderRings(); renderTable(); renderArrays(); }
+  function renderAll() { renderData(); renderStatus(); }
+
+  /* ---------- loop and events ---------- */
+  function frame(now) {
+    if (lastNow !== null && S.status === 'running' && !quiet) {
+      var dt = Math.min(0.25, (now - lastNow) / 1000);
+      if (advance(dt)) renderData();
+      renderStatus();
+    }
+    lastNow = now;
+    requestAnimationFrame(frame);
+  }
+
+  el.play.addEventListener('click', function () { S.status = S.status === 'running' ? 'paused' : 'running'; renderStatus(); });
+  el.stop.addEventListener('click', reset);                 /* Stop empties the rings but the fault flag and count stay latched */
+  el.power.addEventListener('click', powerCycle);
+
+  el.fault.addEventListener('click', function () {
+    raiseFault(S.simT, faultN());                           /* every fault gets its own file */
+    renderAll();
+  });
+
+  el.arm.addEventListener('click', function () {
+    if (S.armAt !== null) { S.armAt = null; }
+    else {
+      var d = Math.max(0.5, Math.min(600, +el.faultIn.value || 5)); el.faultIn.value = d;
+      S.armEvery = d; S.armAt = S.simT + d;                     /* counted in simulation time, so it waits while paused */
+    }
+    renderStatus();
+  });
+  el.repeat.addEventListener('change', renderStatus);
+
+  el.failLog.addEventListener('change', renderStatus);
+
+  function faultN() { var n = Math.max(1, Math.min(20, Math.round(+el.faultN.value) || 1)); return n; }
+  el.faultN.addEventListener('input', renderStatus);
+  el.faultN.addEventListener('change', function () { el.faultN.value = faultN(); renderStatus(); });
+
+  function manualPush() {
+    if (S.status === 'running') return;
+    if (S.status === 'stopped') S.status = 'paused';
+    advance(Math.max(0, S.nextT - S.simT));
+    renderAll();
+  }
+  el.push.addEventListener('click', manualPush);
+  el.step.addEventListener('click', manualPush);
+  el.push.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); manualPush(); } });
+
+  /* rate: number box for exact values, logarithmic slider for sweeping 1 Hz to 60 kHz */
+  var LOGMAX = Math.log(MAXRATE);
+  function setRate(r, from) {
+    rate = Math.max(1, Math.min(MAXRATE, Math.round(r) || 1));
+    if (from !== 'num') el.rateNum.value = rate;
+    if (from !== 'slider') el.rate.value = Math.round(1000 * Math.log(rate) / LOGMAX);
+    var z = sizing(rate);
+    if (z.cap !== S.cap || z.pool !== S.rings.length) {      /* the rate needs a different buffer: allocate it now, before logging */
+      var was = S.status; reset(); if (was === 'running') S.status = 'running';
+    }
+    renderStatus(); renderTable();
+  }
+  el.rate.addEventListener('input', function () { setRate(Math.exp(LOGMAX * el.rate.value / 1000), 'slider'); });
+  el.rateNum.addEventListener('input', function () { if (el.rateNum.value !== '') setRate(+el.rateNum.value, 'num'); });
+  el.rateNum.addEventListener('change', function () { setRate(+el.rateNum.value, ''); });
+
+  el.csvList.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    download(S.files.filter(function (j) { return j.no === +b.dataset.no; })[0]);
+  });
+
+  el.schema.value = schemaText(); checkSchema();
+  setRateInit();
+  function setRateInit() { el.rateNum.value = rate; el.rate.value = Math.round(1000 * Math.log(rate) / LOGMAX); }
+  reset();
+  requestAnimationFrame(frame);
+
+  /* ---------- pages ---------- */
+  function showPage(name) {                     /* switch in place: no reliance on address links, which some viewers block */
+    var cpp = name === 'cpp';
+    el.pageSim.hidden = cpp; el.pageCpp.hidden = !cpp;
+    Array.prototype.forEach.call(document.querySelectorAll('.nav button'), function (b) {
+      if ((b.dataset.page === 'cpp') === cpp) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    if (cpp) renderArrays();
+    try { window.scrollTo(0, 0); } catch (e) { /* not essential */ }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.nav button'), function (b) {
+    b.addEventListener('click', function () { showPage(b.dataset.page); });
+  });
+  showPage(location.hash === '#cpp' ? 'cpp' : 'sim');
+
+  /* light colouring of the C++ listing: comments, strings, preprocessor lines, keywords */
+  (function () {
+    var KW = /\b(template|typename|class|struct|namespace|public|private|static_assert|static|constexpr|const|explicit|return|if|for|while|continue|bool|double|void|this|true|false|enum|inline)\b/g;
+    Array.prototype.forEach.call(document.querySelectorAll('pre.code code'), function (codeEl) { codeEl.innerHTML = codeEl.innerHTML.split('\n').map(function (line) {
+      var i = line.indexOf('//'), code = i < 0 ? line : line.slice(0, i), com = i < 0 ? '' : '<span class="c">' + line.slice(i) + '</span>';
+      if (/^\s*#/.test(code)) return '<span class="p">' + code + '</span>' + com;
+      code = code.split(/("[^"]*")/).map(function (part, n) { return n % 2 ? '<span class="s">' + part + '</span>' : part.replace(KW, '<span class="k">$1</span>'); }).join('');
+      return code + com;
+    }).join('\n'); });
+  })();
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var text = $(btn.dataset.copy).textContent, msg = btn.parentNode.querySelector('.copymsg');
+      var done = function (ok) { msg.textContent = ok ? 'Copied.' : 'Select the code and copy it by hand.'; };
+      try { navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); } catch (e) { done(false); }
+    });
+  });
+
+  /* ---------- edge-case self-tests ----------
+     Run from the "Run edge-case tests" button, or open the page with #test at the end of the address.
+     They drive the same simulation code as the page, in simulated time, then put the page back as it was. */
+  var quiet = false;                                   /* true while tests run: no file downloads, no animation */
+  function tRun(sec) { var n = Math.round(sec / 0.025); for (var i = 0; i < n; i++) advance(0.025); }
+  function tSetup(r, schema) {
+    el.repeat.checked = false; el.failLog.checked = true;
+    if (schema) { el.schema.value = schema; var e = applySchema(); if (e) throw new Error('schema: ' + e); }
+    setRate(r, ''); powerCycle();
+  }
+  function tRows(job) { return job.csv.trim().split('\n').slice(1).map(function (l) { return l.split(',').map(Number); }); }
+  function tIncreasing(a) { for (var i = 1; i < a.length; i++) if (!(a[i] > a[i - 1])) return false; return true; }
+  function tEvenlySpaced(a, step) { for (var i = 1; i < a.length; i++) if (Math.abs(a[i] - a[i - 1] - step) > 1e-5) return false; return true; }
+  function tPresent() { var m = {}; S.rings.forEach(function (g) { for (var k = 0; k < S.cap; k++) if (g.seq[k] >= 0) m[g.seq[k]] = (m[g.seq[k]] || 0) + 1; }); return m; }
+  var DEFAULT_SCHEMA = 'time_s,ch0,ch1,ch2,ch3,fault\nfloat64,float32,float32,float32,float32,uint8';
+
+  var atStart = {};                                    /* what the page showed before the tests touched it */
+  var TESTS = [
+    ['start-up: the fields box shows the columns in use, and the buffer matches the rate', function (ok) {
+      ok(atStart.schema === atStart.inUse, 'fields box matched the columns in use');
+      ok(atStart.cap === sizing(atStart.rate).cap && atStart.rings === sizing(atStart.rate).pool, 'ring size and count matched the rate');
+      ok(atStart.applyDisabled, 'Apply fields was idle because nothing was edited');
+    }],
+    ['sizing: power-of-two rings, 9 s plus slack, and no ring count would need fewer slots', function (ok) {
+      [1, 2, 7, 8, 9, 10, 100, 999, 1000, 44100, 60000].forEach(function (r) {
+        var z = sizing(r);
+        ok((z.cap & (z.cap - 1)) === 0 && z.cap >= MINCAP, r + ' Hz: capacity ' + z.cap + ' is a power of two');
+        ok(z.pool >= MINPOOL && z.pool <= MAXPOOL && (z.pool - 2) * z.cap >= 9 * r, r + ' Hz: ' + z.pool + ' rings hold 9 s with two rings of slack');
+        var smaller = false;
+        for (var n = MINPOOL; n <= MAXPOOL; n++) for (var c = MINCAP; c <= z.cap * 8; c *= 2) if ((n - 2) * c >= 9 * r && (n * c < z.total || (n * c === z.total && n < z.pool))) smaller = true;
+        ok(!smaller, r + ' Hz: ' + z.total + ' slots is the least any allowed ring count needs');
+        ok(z.use >= 2 && z.spare >= 1 && (z.use - 1) * z.cap >= 3 * r, r + ' Hz: the ' + z.use + ' rings in use always keep 3 s of history');
+      });
+    }],
+    ['hand-over: a full ring passes to the next, and the spares stay inactive', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA);
+      for (var i = 0; i < S.cap; i++) advance(Math.max(0, S.nextT - S.simT));
+      ok(S.active === 1 && S.head === 0, 'after capacity pushes ring[1] is active at slot 0');
+      for (i = 0; i < (S.use - 1) * S.cap; i++) advance(Math.max(0, S.nextT - S.simT));
+      ok(S.active === 0, 'after ' + S.use + ' x capacity pushes writing is back on ring[0]');
+      ok(S.rings.slice(S.use).every(function (g) { return g.state === 'free' && g.lastSeq < 0; }), 'spare rings were never written');
+    }],
+    ['overwrite: the newest 2 x capacity samples are always present exactly once', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(40);
+      var m = tPresent(), good = true;
+      for (var n = S.total - 2 * S.cap; n < S.total; n++) if (m[n] !== 1) good = false;
+      ok(good, 'no recent sample is missing or duplicated');
+      ok(S.dropped === 0, 'nothing dropped without a fault');
+    }],
+    ['capture: 6 s window, in order, evenly spaced, fault column flips at the fault', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(10); raiseFault(S.simT); var f = S.pend[0]; tRun(3.05);
+      var job = S.lastJob; ok(!!job && S.fileNo === 1, 'exactly one file was written');
+      var rows = tRows(job), ts = rows.map(function (x) { return x[0]; });
+      ok(Math.abs(rows.length - 6 * 8) <= 1, 'row count is 6 s x rate (got ' + rows.length + ')');
+      ok(tIncreasing(ts) && tEvenlySpaced(ts, 1 / 8), 'timestamps increase with no gaps');
+      ok(ts[0] >= f - 3 - 1e-6 && ts[ts.length - 1] <= f + 3 + 1e-6, 'all rows are inside the window');
+      ok(rows.every(function (x) { return Math.abs(x[0] - f) < 1e-6 || x[5] === (x[0] > f ? 1 : 0); }), 'fault column (the fault count) is 0 before the fault and 1 after it (a sample at the very instant may be either)');
+      ok(S.flag && S.faultCount === 1 && !S.pend.length, 'fault flag is still up after the capture, count 1');
+    }],
+    ['early fault: less than 3 s of history gives a short file, not a crash', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(1); raiseFault(S.simT); tRun(3.05);
+      var job = S.lastJob, ts = tRows(job).map(function (x) { return x[0]; });
+      ok(!!job && job.short === true, 'file is flagged as short on pre-fault data');
+      ok(ts[0] === 0 && tIncreasing(ts), 'file starts at the first sample ever logged');
+    }],
+    ['fault before the first sample: every row is post-fault', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); raiseFault(S.simT); tRun(3.05);
+      var rows = tRows(S.lastJob);
+      ok(rows.length >= 24 && rows.every(function (x) { return x[5] === 1; }), 'all ' + rows.length + ' rows carry fault = 1');
+    }],
+    ['latched flag: stays up after the file, through Stop and a rate change; only a power cycle clears it', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); ok(!S.flag && S.faultCount === 0, 'starts clear with a count of 0');
+      tRun(5); raiseFault(S.simT); tRun(7);
+      ok(S.fileNo === 1 && S.jobs.length === 0, 'the fault was written to a file and the write finished');
+      ok(S.flag && S.faultCount === 1, 'flag is still raised long after, count 1');
+      raiseFault(S.simT); raiseFault(S.simT + 0.5); ok(S.faultCount === 3, 'two more faults bring the count to 3');
+      reset(); ok(S.flag && S.faultCount === 3 && S.total === 0 && !S.pend.length, 'Stop empties the rings but keeps the flag and the count');
+      setRate(100, ''); ok(S.flag && S.faultCount === 3, 'a rate change keeps them too');
+      setRate(8, ''); tRun(4); raiseFault(S.simT); tRun(3.05);
+      var rows = tRows(S.lastJob); ok(rows[0][5] === 3 && rows[rows.length - 1][5] === 4, 'the fault column carries the count: 3 before this fault, 4 after');
+      powerCycle(); ok(!S.flag && S.faultCount === 0 && S.total === 0, 'a power cycle clears the flag and the count');
+    }],
+    ['back-to-back faults while the flag is still up: one file per fault', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(6);
+      var at = []; raiseFault(S.simT); at.push(S.simT); tRun(0.5); raiseFault(S.simT); at.push(S.simT); tRun(0.75); raiseFault(S.simT); at.push(S.simT);
+      ok(S.pend.length === 3, 'three faults queued');
+      var starts = [], sizes = [];
+      for (var i = 0; i < 3; i++) { while (S.fileNo <= i) advance(0.025); var ts = tRows(S.lastJob).map(function (x) { return x[0]; }); starts.push(ts[0]); sizes.push(ts.length); ok(tIncreasing(ts), 'file ' + (i + 1) + ' is in time order'); }
+      ok(S.fileNo === 3 && S.files.map(function (j) { return j.name; }).join() === 'fault_capture_3.csv,fault_capture_2.csv,fault_capture_1.csv', 'three separately named files');
+      ok(sizes.every(function (n) { return Math.abs(n - 48) <= 1; }), 'each file holds its own 6 s (' + sizes.join(', ') + ' rows)');
+      ok(Math.abs((starts[1] - starts[0]) - 0.5) < 0.13 && Math.abs((starts[2] - starts[1]) - 0.75) < 0.13, 'each window is centred on its own fault');
+      ok(S.files.every(function (j, i) { return Math.abs(j.at - at[2 - i]) < 1e-9; }), 'each file records the time of its fault');
+      tRun(0.1); ok(S.flag && S.faultCount === 3 && !S.pend.length, 'all three captured; flag still up, count 3');
+    }],
+    ['failure logger off: faults raise the flag and the count, but nothing is locked or written', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); el.failLog.checked = false; tRun(6); raiseFault(S.simT, 2); tRun(1); raiseFault(S.simT);
+      ok(S.flag && S.faultCount === 3, 'flag is up and the count is 3');
+      ok(S.pend.length === 0 && S.rings.every(function (g, r) { return !locked(r); }), 'no capture is queued and no ring is locked');
+      tRun(8); ok(S.fileNo === 0 && S.jobs.length === 0 && S.dropped === 0, 'no file was written and logging carried on');
+      var g = S.rings[S.active]; ok(g.ch[5][Math.max(0, S.head - 1)] === 3, 'the fault column still shows the count');
+      el.failLog.checked = true; raiseFault(S.simT); tRun(3.05);
+      ok(S.fileNo === 1 && Math.abs(tRows(S.lastJob).length - 48) <= 1, 'switched back on, the next fault is written in full');
+    }],
+    ['several faults at once: the count goes up by that many and each gets its own file', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(6); raiseFault(S.simT, 4); var f = S.pend[0];
+      ok(S.faultCount === 4 && S.pend.length === 4, 'count is 4 and four captures are queued');
+      tRun(3.05);
+      ok(S.fileNo === 4 && S.jobs.length === 4, 'four files started together');
+      var a = S.files.map(function (j) { return j.csv; });
+      ok(a.every(function (c) { return c === a[0]; }) && Math.abs(tRows(S.files[0]).length - 48) <= 1, 'all four hold the same complete 6 s window');
+      var rows = tRows(S.files[0]); ok(rows[0][5] === 0 && rows[rows.length - 1][5] === 4, 'fault column steps from 0 to 4 at the fault');
+      tRun(3.3); var left = false; S.rings.forEach(function (g) { for (var k = 0; k < S.cap; k++) if (g.seq[k] >= 0 && g.t[k] < f + 3 - 1e-6) left = true; });
+      ok(S.jobs.length === 0 && !left, 'all four finished and the window was cleared once the last had it');
+      ok(S.dropped === 0, 'nothing dropped');
+    }],
+    ['two faults 1 s apart: each gets its own complete file', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(6); raiseFault(S.simT); var f1 = S.pend[0]; tRun(1); raiseFault(S.simT); var f2 = S.pend[1];
+      ok(S.pend.length === 2, 'both faults are queued');
+      tRun(2.05); ok(S.fileNo === 1, 'first file written 3 s after the first fault');
+      var a = tRows(S.lastJob).map(function (x) { return x[0]; });
+      tRun(1.1); ok(S.fileNo === 2, 'second file written 3 s after the second fault');
+      var b = tRows(S.lastJob).map(function (x) { return x[0]; });
+      ok(Math.abs(a.length - 48) <= 1 && Math.abs(b.length - 48) <= 1, 'both files hold 6 s (' + a.length + ' and ' + b.length + ' rows)');
+      ok(tIncreasing(a) && tIncreasing(b) && Math.abs((b[0] - a[0]) - (f2 - f1)) < 0.13, 'second window starts ' + (f2 - f1).toFixed(2) + ' s after the first');
+    }],
+    ['lock: window slots are untouched until they are written, then cleared', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(10); raiseFault(S.simT); var f = S.pend[0], want = {}, n, i, m;
+      S.rings.forEach(function (g) { for (var k = 0; k < S.cap; k++) if (g.seq[k] >= 0 && g.t[k] >= f - 3 - 1e-9) want[g.seq[k]] = g.t[k]; });
+      var intact = true;
+      for (i = 0; i < Math.round((POST - 0.05) / 0.025); i++) { advance(0.025); m = tPresent(); for (n in want) if (m[n] !== 1) intact = false; }
+      ok(intact, 'every pre-fault window sample survived the 3 s after the fault');
+      tRun(0.1); var job = S.jobs[0]; ok(!!job, 'the file write has started');
+      var early = true, inOrder = true;
+      for (i = 0; i < Math.round((WRITE - 0.2) / 0.025); i++) {
+        advance(0.025); m = tPresent();
+        for (n in want) { if (want[n] > job.cursor + 1e-9 && m[n] !== 1) early = false; if (want[n] < job.cursor - 0.13 && m[n] === 1) inOrder = false; }
+      }
+      ok(early, 'no slot was cleared before the file write reached it');
+      ok(inOrder, 'slots were cleared oldest first, right behind the write');
+      ok(job.cursor > job.lo && job.cursor < job.hi && job.rings.some(function (r) { return r === S.active || locked(r); }), 'part-way through, the unwritten rest is still locked');
+      tRun(0.4); m = tPresent(); var gone = true; for (n in want) if (m[n]) gone = false;
+      ok(S.jobs.length === 0 && job.done === true, 'the file finished');
+      ok(gone, 'the whole pre-fault window is cleared once the file is written');
+      var older = false; S.rings.forEach(function (g) { for (var k = 0; k < S.cap; k++) if (g.seq[k] >= 0 && g.t[k] < f + 3 - 1e-6) older = true; });
+      ok(!older, 'nothing older than the written window is left in any ring');
+      ok(S.rings.every(function (g, r) { return !locked(r); }), 'nothing is locked afterwards');
+      ok(S.dropped === 0, 'logging carried on throughout');
+    }],
+    ['overlapping faults: a slot two files need is cleared only after the second has it', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(10); raiseFault(S.simT); tRun(2); raiseFault(S.simT); var f2 = S.pend[1];
+      tRun(1.05);                                                   /* file 1 is being written; fault 2 is still pending */
+      var need = {}, kept = true, n, m;
+      S.rings.forEach(function (g) { for (var k = 0; k < S.cap; k++) if (g.seq[k] >= 0 && g.t[k] >= f2 - 3 - 1e-9) need[g.seq[k]] = 1; });
+      for (var i = 0; i < 84; i++) { advance(0.025); if (S.fileNo < 2) { m = tPresent(); for (n in need) if (m[n] !== 1) kept = false; } }
+      ok(kept, 'file 1 did not clear anything file 2 was still waiting for');
+      ok(S.fileNo === 2, 'file 2 was written');
+      var ts = tRows(S.lastJob).map(function (x) { return x[0]; });
+      ok(Math.abs(ts.length - 48) <= 1 && tEvenlySpaced(ts, 1 / 8) && Math.abs(ts[0] - (f2 - 3)) < 0.13, 'file 2 is complete, starting 3 s before its own fault');
+      tRun(3.2); ok(S.jobs.length === 0 && S.rings.every(function (g, r) { return !locked(r); }), 'everything is written and unlocked in the end');
+    }],
+    ['continuity: logging carries on during the file write, with no drops', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(10); raiseFault(S.simT); tRun(3.05);
+      var before = S.total; tRun(2.5);
+      ok(S.total - before === 20, '2.5 s at 8 Hz logged 20 more samples during the write (got ' + (S.total - before) + ')');
+      ok(S.dropped === 0, 'nothing dropped for a single fault');
+    }],
+    ['no allocation while logging: the pool is the same storage before and after', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); var n = S.rings.length, bufs = S.rings.map(function (g) { return g.seq; });
+      for (var i = 0; i < 6; i++) { tRun(3.2); raiseFault(S.simT); }
+      tRun(10);
+      ok(S.rings.length === n, 'ring count stayed at ' + n);
+      ok(S.rings.every(function (g, r) { return g.seq === bufs[r]; }), 'every ring still uses its original buffer');
+    }],
+    ['back-to-back faults: every sample is either logged or counted as dropped', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(4);
+      for (var i = 0; i < 5; i++) { if (!S.pend.length) raiseFault(S.simT); tRun(3.1); }
+      tRun(8);
+      ok(S.total + S.dropped === Math.floor(S.simT * 8 + 1e-6) + 1, 'pushed ' + S.total + ' + dropped ' + S.dropped + ' = samples due');
+      ok(S.fileNo >= 3, S.fileNo + ' files were written');
+      ok(tIncreasing(tRows(S.lastJob).map(function (x) { return x[0]; })), 'last file is in time order with no repeats');
+      ok(S.active >= 0, 'logging recovered once rings were released');
+    }],
+    ['fault storm: a fault every 0.25 s for 30 s, no drops and every file complete', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(6); var n0 = S.rings.length, complete = true, ordered = true, seenNo = 0;
+      for (var i = 0; i < 1200; i++) {
+        if (i % 10 === 0) raiseFault(S.simT);
+        advance(0.025);
+        if (S.fileNo > seenNo) { seenNo = S.fileNo; var ts = tRows(S.lastJob).map(function (x) { return x[0]; }); if (Math.abs(ts.length - 48) > 1) complete = false; if (!tIncreasing(ts) || !tEvenlySpaced(ts, 1 / 8)) ordered = false; }
+      }
+      ok(S.fileNo >= 100, S.fileNo + ' files, one per fault');
+      ok(complete, 'every file holds its full 6 s');
+      ok(ordered, 'every file is in time order with no gaps');
+      ok(S.dropped === 0, 'nothing dropped (' + S.dropped + ')');
+      ok(S.rings.length === n0, 'pool stayed at ' + n0 + ' rings');
+    }],
+    ['pool too small: samples are dropped, never written over a locked window', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); S.rings.splice(2); tRun(4); var seen = false, safe = true;      /* leave only two rings, on purpose */
+      for (var i = 0; i < 800; i++) {
+        if (!S.pend.length) raiseFault(S.simT);
+        var stuck = S.active < 0, before = S.total;
+        advance(0.025);
+        if (stuck && S.active < 0) { seen = true; if (S.total !== before) safe = false; }
+      }
+      ok(seen, 'with only 2 rings the pool did run out of writable rings');
+      ok(safe, 'nothing was written while every ring was locked');
+      ok(S.dropped > 0, 'the lost samples were counted as dropped (' + S.dropped + ')');
+      ok(S.total + S.dropped === Math.floor(S.simT * 8 + 1e-6) + 1, 'pushed + dropped = samples due');
+    }],
+    ['timed fault: fires at the set time, and again when repeating', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA); tRun(2); S.armEvery = 2.5; S.armAt = S.simT + 2.5; var due = S.armAt;
+      tRun(2.6); ok(S.flag && S.pend.length === 1 && Math.abs(S.pend[0] - due) < 1e-9, 'fault raised at exactly t = ' + due.toFixed(3) + ' s');
+      ok(S.armAt === null, 'one-shot timer disarmed itself');
+      tSetup(8, DEFAULT_SCHEMA); el.repeat.checked = true; S.armEvery = 7; S.armAt = 7; tRun(22);
+      ok(S.fileNo === 3 || S.fileNo === 2, 'repeating every 7 s produced files (' + S.fileNo + ')');
+      ok(S.armAt !== null && Math.abs(S.armAt - 28) < 1e-6, 'next repeat is armed for t = 28 s');
+      el.repeat.checked = false;
+    }],
+    ['lowest rate: 1 Hz capture has one row per second', function (ok) {
+      tSetup(1, DEFAULT_SCHEMA); tRun(10); raiseFault(S.simT); tRun(3.05);
+      var ts = tRows(S.lastJob).map(function (x) { return x[0]; });
+      ok(ts.length === 7 || ts.length === 6, ts.length + ' rows');
+      ok(tEvenlySpaced(ts, 1), 'rows are 1 s apart');
+    }],
+    ['highest rate: 60 kHz capture is complete, ordered and within the size estimate', function (ok) {
+      tSetup(60000, DEFAULT_SCHEMA); tRun(4); raiseFault(S.simT); tRun(3.05);
+      var job = S.lastJob, ts = job.csv.split('\n'), prev = -1, good = true;
+      for (var i = 1; i < ts.length - 1; i++) { var v = +ts[i].slice(0, ts[i].indexOf(',')); if (!(v > prev)) good = false; prev = v; }
+      ok(Math.abs(job.rows - 360000) <= 1, 'row count is 360,000 (got ' + job.rows + ')');
+      ok(good, 'timestamps strictly increase');
+      ok(job.bytes <= csvMax(), 'file (' + job.bytes + ' bytes) is within the max CSV estimate (' + csvMax() + ')');
+      ok(S.dropped === 0, 'nothing dropped');
+    }],
+    ['rate change: same buffer size keeps the data, a new size starts clean', function (ok) {
+      var r1 = 0; for (var r = 5; r < 500 && !r1; r++) { var a = sizing(r), b = sizing(r + 1); if (a.cap === b.cap && a.pool === b.pool) r1 = r; }   /* two rates that share a buffer size */
+      ok(r1 > 0, 'found two neighbouring rates with the same buffer (' + r1 + ' and ' + (r1 + 1) + ' Hz)');
+      tSetup(r1, DEFAULT_SCHEMA); tRun(3); var n = S.total;
+      setRate(r1 + 1, ''); ok(S.total === n && n > 0, 'same buffer: data kept');
+      setRate(100 * r1, ''); ok(S.total === 0 && S.cap === sizing(100 * r1).cap, 'a much higher rate needs a bigger buffer: reallocated and empty');
+    }],
+    ['columns: one column, sixteen columns, and bad input is refused', function (ok) {
+      tSetup(8, 'x\nint8'); tRun(4); raiseFault(S.simT); tRun(3.05);
+      ok(S.lastJob.csv.split('\n')[0] === 'x' && S.lastJob.rows > 40, 'a single column still captures');
+      var names = [], types = []; for (var i = 0; i < 16; i++) { names.push('c' + i); types.push('uint16'); }
+      tSetup(8, names.join(',') + '\n' + types.join(',')); ok(fields.length === 16, 'sixteen columns accepted');
+      ok(!!parseSchema(names.concat(['c16']).join(',') + '\n' + types.concat(['uint16']).join(',')).err, 'seventeen columns refused');
+      ok(!!parseSchema('a,a\nint8,int8').err, 'duplicate names refused');
+      ok(!!parseSchema('a,b\nint8').err, 'mismatched column counts refused');
+      ok(!!parseSchema('a\nint9').err, 'unknown type refused');
+      ok(!!parseSchema('a').err && !!parseSchema('').err, 'missing type line and empty input refused');
+      ok(!parseSchema('  a , b \n INT8 , Float32 ').err, 'spaces and capitals in the input are tolerated');
+      ok(!parseSchema('a,b,c,d\ndouble,float,int,uint8_t').err, 'C type names are accepted');
+      tSetup(8, 'time_s,v\ndouble,float'); ok(TYPES[fields[0].type].size === 8 && TYPES[fields[1].type].size === 4 && csvMax() > 0, 'double is 8 bytes and float is 4');
+    }],
+    ['types: small integers wrap, an integer time column is in nanoseconds', function (ok) {
+      tSetup(8, 'time_ns,count8,count\nuint64,int8,int32'); tRun(30); raiseFault(S.simT); tRun(3.05);
+      var rows = tRows(S.lastJob), last = rows[rows.length - 1];
+      ok(rows.every(function (x) { return x[1] >= -128 && x[1] <= 127; }), 'int8 column stays within -128..127');
+      ok(rows.some(function (x) { return x[1] !== x[2]; }), 'int8 counter has wrapped while int32 has not');
+      ok(Math.abs(last[0] - Math.round(last[0])) === 0 && last[0] > 1e9, 'time column holds whole nanoseconds');
+      ok(S.lastJob.bytes <= csvMax(), 'file is within the max CSV estimate');
+    }],
+    ['manual push and stop: one sample per press, stop clears everything but the latched flag', function (ok) {
+      tSetup(8, DEFAULT_SCHEMA);
+      advance(Math.max(0, S.nextT - S.simT)); advance(Math.max(0, S.nextT - S.simT));
+      ok(S.total === 2 && Math.abs(S.simT - 0.125) < 1e-9, 'two presses logged two samples, 1/8 s apart');
+      advance(0); ok(S.total === 2, 'no time passing logs nothing');
+      tRun(5); raiseFault(S.simT); S.armAt = S.simT + 1; tRun(3.5); reset();
+      ok(S.total === 0 && S.dropped === 0 && !S.pend.length && S.armAt === null && S.jobs.length === 0 && S.fileNo === 0, 'stop cleared samples, timer, pending captures and files');
+      ok(S.flag && S.faultCount >= 1, 'the fault flag and count survived Stop');
+    }]
+  ];
+
+  function runTests(done) {
+    var saved = { rate: rate, schema: schemaText(), repeat: el.repeat.checked, failLog: el.failLog.checked, latch: { flag: latch.flag, count: latch.count } }, results = [], i = 0;
+    atStart = { schema: el.schema.value.trim(), inUse: schemaText(), rate: rate, cap: S.cap, rings: S.rings.length, applyDisabled: el.applySchema.disabled };
+    quiet = true; el.testOut.innerHTML = '<p>Running…</p>'; el.runTests.disabled = true;
+    function next() {
+      if (i === TESTS.length) return finish();
+      var t = TESTS[i++], fails = [], n = 0;
+      try { t[1](function (cond, msg) { n++; if (!cond) fails.push(msg); }); } catch (e) { fails.push('threw: ' + e.message); }
+      results.push({ name: t[0], checks: n, fails: fails });
+      setTimeout(next, 0);                              /* let the page breathe between tests */
+    }
+    function finish() {
+      el.repeat.checked = saved.repeat; el.failLog.checked = saved.failLog; el.schema.value = saved.schema; applySchema(); setRate(saved.rate, ''); latch = saved.latch; reset();
+      quiet = false; el.runTests.disabled = false;
+      var bad = results.filter(function (r) { return r.fails.length; }).length, checks = results.reduce(function (a, r) { return a + r.checks; }, 0);
+      var h = '<p class="' + (bad ? 'warn' : 'pass') + '"><b>' + (bad ? bad + ' of ' + results.length + ' tests failed' : 'All ' + results.length + ' tests passed') + '</b> (' + checks + ' checks)</p><ol>';
+      results.forEach(function (r) {
+        h += '<li class="' + (r.fails.length ? 'warn' : '') + '">' + (r.fails.length ? 'FAIL' : 'pass') + ': ' + esc(r.name);
+        if (r.fails.length) h += '<ul>' + r.fails.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>';
+        h += '</li>';
+      });
+      el.testOut.innerHTML = h + '</ol>';
+      document.documentElement.setAttribute('data-tests', bad ? 'fail' : 'pass');
+      window.cbufTestResults = results;
+      if (done) done(results);
+    }
+    next();
+  }
+  el.runTests.addEventListener('click', function () { runTests(); });
+  if (location.hash === '#test') runTests();
+
+})();
+</script>
+</body>
+</html>
