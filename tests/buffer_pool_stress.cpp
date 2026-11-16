@@ -1,7 +1,7 @@
 // ring_pool_stress.cpp - runs the three contexts of ring_pool.hpp as three real threads and checks
 // every file the logger writes, then times push(). Build with -pthread.
 //   producer: pushes samples as fast as it can      poller: raises faults      logger: writes the files
-#include "ring_pool.hpp"
+#include "RingBufferPool.hpp"
 
 #include <algorithm>
 #include <atomic>

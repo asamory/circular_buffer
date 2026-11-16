@@ -1,7 +1,7 @@
 # circular_buffer
 
 A lock-free circular buffer in C11 for logging fixed-size samples at high rates
-(tested at 60 kHz). It is header-only: include `include/cbuf.h`.
+(tested at 60 kHz). It is header-only: include `include/RingBuffer.h`.
 
 One context pushes samples (a sampling thread or interrupt handler); another
 drains them in batches and does the slow work, such as writing to disk. A push
@@ -121,7 +121,12 @@ sampling source, such as a hardware timer interrupt or a real-time thread.
 
 ## Layout
 
-    include/cbuf.h     the buffer
-    src/cbuf_test.c    correctness checks
-    src/log_demo.c     60 kHz logging demo
+    include/RingBuffer.h            the buffer
+    include/RingBufferPool.hpp     C++ ring pool
+    src/log_demo.c            60 kHz logging demo
+    src/ring_pool_example.cpp ring pool example
+    tests/cbuf_test.c         correctness checks
+    tests/ring_pool_test.cpp  ring pool tests
+    tests/ring_pool_stress.cpp ring pool stress test
+    scripts/                  build/run/clean helpers
     Makefile

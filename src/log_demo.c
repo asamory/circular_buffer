@@ -1,17 +1,5 @@
-/*
- * log_demo - proves the buffer holds up at a 60 kHz sample rate.
- *
- * A producer thread generates one sample every 1/60000 s (16.7 us) and pushes
- * it. The main thread plays logger: it wakes about once a millisecond, drains
- * whatever accumulated and writes it to a binary file. Every sample carries a
- * sequence number, so any loss or reordering is detected.
- *
- * Output format follows the file extension: a name ending in .csv gets text
- * with a header row; anything else gets raw binary sample_t records.
- *
- * usage: log_demo [seconds] [output-file]
- */
-#include "cbuf.h"
+
+#include "RingBuffer.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -51,13 +39,13 @@ static const char CSV_HEADER[] = "sample,time_s,ch0,ch1,ch2,ch3\n";
 static int csv_write_row(FILE *f, const sample_t *s, uint64_t t0_ns)
 {
     /* time is seconds since the first sample; %.9g keeps a float exact */
-    return fprintf(f, 
+    return fprintf(f,
                    "%llu,%.9f,%.9g,%.9g,%.9g,%.9g\n",
-                   (unsigned long long)s->seq, 
+                   (unsigned long long)s->seq,
                    (double)(s->t_ns - t0_ns) / 1e9,
-                   s->ch[0], 
-                   s->ch[1], 
-                   s->ch[2], 
+                   s->ch[0],
+                   s->ch[1],
+                   s->ch[2],
                    s->ch[3]
                   );
 }

@@ -1,0 +1,3 @@
+build/
+fault_capture_*.csv
+.DS_Store

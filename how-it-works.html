@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<!-- how-it-works.html v2.19.0
-     2.19.0: controls card reorganised into labelled groups and stat tiles, and shown on both tabs; sizing note removed; second tab renamed "Impl"
+<!-- how-it-works.html v2.18.1
      2.18.1: typing a rate no longer moves the rate box (fixed-width readouts, stats on their own row)
      2.18.0: page tabs are buttons that switch in place (they no longer depend on address links); C++ tab shows the full header, a worked example and its output
      2.17.0: failure logger on/off switch: when off, faults still latch the flag and count but no window is locked or written
@@ -84,16 +83,9 @@
   .mono { font-family: var(--mono); }
 
   /* toolbar */
-  .bar { padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; }
-  .bargrid { display: flex; flex-wrap: wrap; gap: 16px 36px; align-items: flex-end; }
-  .bgroup { display: flex; flex-direction: column; gap: 6px; }
-  .glabel { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-  .glabel output { text-transform: none; letter-spacing: 0; }
-  .bgroup .inline { flex-wrap: wrap; gap: 8px 14px; min-height: 44px; }
-  .bgroup input[type=number] { width: 110px; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 2px solid var(--line); background: #fff; font: inherit; font-family: var(--mono); font-size: 15px; color: var(--ink); }
-  .bgroup input[type=range] { width: 200px; min-height: 44px; accent-color: var(--indigo); }
-  .barstate { margin: 0; width: auto; align-self: flex-start; }
-  #page-sim .barstate { display: none; }            /* the Simulator tab already shows the status under the rings */
+  .bar { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .barrow { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
+  .group { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
   .btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 2px solid var(--line); background: #fff; color: var(--ink);
     font: inherit; font-weight: 700; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
   .btn svg { width: 16px; height: 16px; }
@@ -109,19 +101,16 @@
   .field input[type=number] { width: 110px; font-family: var(--mono); }
   .field output { color: var(--ink); font-family: var(--mono); }
   #rateOut { display: inline-block; min-width: 12ch; }          /* fixed widths: changing numbers must not move the controls */
-
+  .field .sizeout { min-height: 44px; display: flex; align-items: center; font-size: 15px; font-weight: 700; min-width: 58ch; white-space: nowrap; }
+  .hint.sizing { margin: 0; }
   .inline { display: flex; gap: 8px; align-items: center; }
-  .stats { margin: 0; padding-top: 16px; border-top: 2px solid var(--soft); display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-  .stats > div { min-width: 0; padding: 8px 12px; border: 1.5px solid var(--soft); border-radius: 12px; background: #f8fafc; }
-  .stats > .wide { grid-column: span 3; }
-  .stats dt { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stats dd { margin: 2px 0 0; font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stats > .warn { border-color: var(--red); background: var(--red-l); }
-  .stats > .warn dd { color: var(--red); }
+  .stats { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--ink2); }
+  .stats b { display: inline-block; min-width: 4ch; }
+  .stats b { font-family: var(--mono); color: var(--ink); }
   .warn, .warn b { color: var(--red); font-weight: 700; }
 
   /* field editor */
-  .fields { border-top: 2px solid var(--soft); padding-top: 14px; }
+  .fields { border-top: 2px solid var(--soft); padding-top: 12px; }
   .fields-title { display: block; margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
   #schema { display: block; width: 100%; min-height: 64px; padding: 10px 12px; border-radius: 12px; border: 2px solid var(--line); background: #f8fafc; color: var(--ink);
     font-family: var(--mono); font-size: 15px; line-height: 1.5; resize: vertical; white-space: pre; overflow-x: auto; }
@@ -230,8 +219,7 @@
     .gutter > div:nth-child(3) { border-left: 0; padding-left: 0; }
   }
   @media (max-width: 620px) {
-    .stats > .wide { grid-column: 1 / -1; }
-    .stats > .wide dd { white-space: normal; }
+    .field .sizeout { min-width: 0; white-space: normal; }
     .gutter { grid-template-columns: minmax(0, 1fr); }
     .gutter > div + div { border-left: 0; padding-left: 0; }
     .logger-head { grid-template-columns: minmax(0, 1fr); justify-items: center; }
@@ -243,57 +231,47 @@
 <nav class="nav" aria-label="Pages">
   <span class="brand">Circular buffer</span>
   <button type="button" data-page="sim" aria-current="page">Simulator</button>
-  <button type="button" data-page="cpp">Impl</button>
+  <button type="button" data-page="cpp">C++14 arrays</button>
 </nav>
 <main id="page-sim">
   <header>
     <h1>Logger Algo</h1>
   </header>
 
-  <div id="barSlotSim">
-  <section class="card bar" id="bar" aria-label="Controls">
-    <div class="bargrid">
-      <div class="bgroup" role="group" aria-label="Run">
-        <span class="glabel">Run</span>
-        <div class="inline">
-          <button class="btn primary" id="play" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg><span id="playText">Play</span></button>
-          <button class="btn" id="step" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l7-5.5zM11 2.5h2.5v11H11z" fill="currentColor"/></svg>Step</button>
-          <button class="btn" id="stop" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" fill="currentColor"/></svg>Stop</button>
-        </div>
+  <section class="card bar" aria-label="Controls">
+    <div class="barrow">
+      <div class="group" role="group" aria-label="Transport">
+        <button class="btn primary" id="play" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg><span id="playText">Play</span></button>
+        <button class="btn" id="step" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l7-5.5zM11 2.5h2.5v11H11z" fill="currentColor"/></svg>Step</button>
+        <button class="btn" id="stop" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z" fill="currentColor"/></svg>Stop</button>
       </div>
-      <div class="bgroup">
-        <label class="glabel" for="rateNum">Logging rate, samples/s (1 to 60000) <output id="rateOut"></output></label>
-        <div class="inline"><input id="rateNum" type="number" min="1" max="60000" step="1" value="8" inputmode="numeric">
-          <input id="rate" type="range" min="0" max="1000" step="1" value="0" aria-label="Logging rate slider"></div>
+      <div class="group">
+        <div class="field"><label for="rateNum">Logging rate, samples/s (1 to 60000) <output id="rateOut"></output></label>
+          <div class="inline"><input id="rateNum" type="number" min="1" max="60000" step="1" value="8" inputmode="numeric">
+            <input id="rate" type="range" min="0" max="1000" step="1" value="0" aria-label="Logging rate slider"></div></div>
+        <label class="check" for="failLog"><input id="failLog" type="checkbox" checked> Failure logger on</label>
+        <label class="check" for="pauseCap"><input id="pauseCap" type="checkbox" checked> Pause before writing a file</label>
+        <div class="field"><span>Buffer size, set by the rate</span><output class="sizeout" id="sizeOut" for="rateNum rate"></output></div>
       </div>
-      <div class="bgroup" role="group" aria-label="Fault capture">
-        <span class="glabel">Fault capture</span>
-        <div class="inline">
-          <label class="check" for="failLog"><input id="failLog" type="checkbox" checked> Failure logger on</label>
-          <label class="check" for="pauseCap"><input id="pauseCap" type="checkbox" checked> Pause before writing a file</label>
-        </div>
+      <div class="stats">
+        <span>sample size <b id="sElem"></b></span>
+        <span>max <abbr title="comma-separated values">CSV</abbr> file <b id="sCsv"></b></span>
+        <span>data rate <b id="sRate"></b></span>
+        <span>pool memory <b id="sMem"></b></span>
+        <span id="sHoldWrap"><span id="sUse"></span> <b id="sHold"></b></span>
+        <span>pool <b id="sPool"></b></span>
+        <span>time <b id="sTime"></b></span>
+        <span>pushed <b id="sTotal"></b></span>
+        <span id="sDropWrap">dropped <b id="sDrop"></b></span>
       </div>
     </div>
-    <div class="state barstate" id="state2" role="status"></div>
-    <dl class="stats">
-      <div class="wide"><dt>Buffer size, set by the rate</dt><dd id="sizeOut"></dd></div>
-      <div><dt>Sample size</dt><dd id="sElem"></dd></div>
-      <div><dt>Data rate</dt><dd id="sRate"></dd></div>
-      <div><dt>Pool memory</dt><dd id="sMem"></dd></div>
-      <div><dt>Max <abbr title="comma-separated values">CSV</abbr> file</dt><dd id="sCsv"></dd></div>
-      <div id="sHoldWrap"><dt id="sUse"></dt><dd id="sHold"></dd></div>
-      <div><dt>Inactive in pool</dt><dd id="sPool"></dd></div>
-      <div><dt>Time</dt><dd id="sTime"></dd></div>
-      <div><dt>Pushed</dt><dd id="sTotal"></dd></div>
-      <div id="sDropWrap"><dt>Dropped</dt><dd id="sDrop"></dd></div>
-    </dl>
+    <p class="hint sizing">Speed first: slots per ring stay a power of two, so a slot is found with one mask. Space second: the pool must hold 9 s (3 s before a fault, 3 s after, 3 s to write the file) plus two rings of slack, and the ring count from 3 to 8 that needs the fewest slots in total is used.</p>
     <div class="fields">
       <label class="fields-title" for="schema">Sample fields, CSV style: line 1 is the heading row, line 2 is the type of each column</label>
       <textarea id="schema" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
       <div class="schema-row"><button class="btn" id="applySchema" type="button">Apply fields</button><span id="schemaMsg" role="status"></span></div>
     </div>
   </section>
-  </div>
 
   <div class="stage">
     <section class="card poller" aria-label="Fault poller">
@@ -389,11 +367,9 @@
     <p class="sub">Each ring is a fixed array. The pool is an array of rings. Nothing is allocated while logging.</p>
   </header>
 
-  <div id="barSlotCpp"></div>
-
   <section class="card arrays" aria-label="Rings drawn as arrays">
     <h2>The same rings, drawn as arrays</h2>
-    <p>The simulator's pool, one row per ring and one cell per slot, index 0 on the left. The controls above are the same ones as on the Simulator tab.</p>
+    <p>This is the simulator's pool right now, one row per ring and one cell per slot, index 0 on the left. Run the simulator and come back to see it change.</p>
     <div id="arrayView"></div>
   </section>
 
@@ -730,7 +706,7 @@ time_s,ch0,ch1,ch2,ch3,fault
 
   function $(id) { return document.getElementById(id); }
   var el = { play: $('play'), playIcon: $('playIcon'), playText: $('playText'), step: $('step'), stop: $('stop'), rate: $('rate'), rateNum: $('rateNum'), rateOut: $('rateOut'), sizeOut: $('sizeOut'),
-    schema: $('schema'), applySchema: $('applySchema'), schemaMsg: $('schemaMsg'), viewSeg: $('viewSeg'), power: $('power'), bar: $('bar'), barSlotSim: $('barSlotSim'), barSlotCpp: $('barSlotCpp'), state2: $('state2'), failLog: $('failLog'), arrayView: $('arrayView'),  pageSim: $('page-sim'), pageCpp: $('page-cpp'), faultN: $('faultN'), pauseCap: $('pauseCap'), runTests: $('runTests'), testOut: $('testOut'), fault: $('fault'), faultIn: $('faultIn'), arm: $('arm'), repeat: $('repeat'), armMsg: $('armMsg'), viz: $('viz'), sPool: $('sPool'), sDrop: $('sDrop'), sCsv: $('sCsv'), sDropWrap: $('sDropWrap'),
+    schema: $('schema'), applySchema: $('applySchema'), schemaMsg: $('schemaMsg'), viewSeg: $('viewSeg'), power: $('power'), failLog: $('failLog'), arrayView: $('arrayView'),  pageSim: $('page-sim'), pageCpp: $('page-cpp'), faultN: $('faultN'), pauseCap: $('pauseCap'), runTests: $('runTests'), testOut: $('testOut'), fault: $('fault'), faultIn: $('faultIn'), arm: $('arm'), repeat: $('repeat'), armMsg: $('armMsg'), viz: $('viz'), sPool: $('sPool'), sDrop: $('sDrop'), sCsv: $('sCsv'), sDropWrap: $('sDropWrap'),
     flag: $('flag'), flagText: $('flagText'), rings: $('rings'), drops: $('drops'), push: $('pushBtn'), state: $('state'),
     tablecard: $('tablecard'), tblName: $('tblName'), tblNote: $('tblNote'), thead: $('thead'), tbody: $('tbody'),
     csvBox: $('csvBox'), csvMsg: $('csvMsg'), csvList: $('csvList'), csvPre: $('csvPre'),
@@ -1126,7 +1102,7 @@ time_s,ch0,ch1,ch2,ch3,fault
     el.sRate.textContent = fmtBytes(elem * rate) + '/s';
     el.sHold.textContent = fmtDur(hold) + (tooSmall ? ' (need 6 s)' : '');
     el.sHoldWrap.className = tooSmall ? 'warn' : '';
-    el.sPool.textContent = idle + ' of ' + S.rings.length + ' rings';
+    el.sPool.textContent = S.rings.length + ' rings (' + idle + ' inactive)';
     el.sTime.textContent = S.simT.toFixed(1) + ' s';
     el.sTotal.textContent = fmtInt(S.total);
     el.sDrop.textContent = fmtInt(S.dropped); el.sDropWrap.className = S.dropped ? 'warn' : '';
@@ -1145,7 +1121,6 @@ time_s,ch0,ch1,ch2,ch3,fault
       parts.push((S.jobs.length > 1 ? 'Writing ' + S.jobs.length + ' files, ' + j0.name + ' at ' + pc + '%' : 'Writing ' + j0.name + ': ' + pc + '%') + '; records clear as they are written.');
     }
     el.state.textContent = parts.join(' '); el.state.className = cls;
-    el.state2.textContent = el.state.textContent; el.state2.className = cls + ' barstate';
     (S.files || []).forEach(function (j) {                                /* progress of each listed file */
       var bar = el.csvList.querySelector('[data-p="' + j.no + '"]'), txt = el.csvList.querySelector('[data-pt="' + j.no + '"]');
       if (!bar) return;
@@ -1272,7 +1247,6 @@ time_s,ch0,ch1,ch2,ch3,fault
   function showPage(name) {                     /* switch in place: no reliance on address links, which some viewers block */
     var cpp = name === 'cpp';
     el.pageSim.hidden = cpp; el.pageCpp.hidden = !cpp;
-    (cpp ? el.barSlotCpp : el.barSlotSim).appendChild(el.bar);            /* one controls card, shown on whichever tab is open */
     Array.prototype.forEach.call(document.querySelectorAll('.nav button'), function (b) {
       if ((b.dataset.page === 'cpp') === cpp) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });

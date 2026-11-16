@@ -1,6 +1,6 @@
 // ring_pool_example.cpp - logs 20 s of samples at 8 Hz, raises one fault at
 // t = 10 s, and writes its 6 s window to fault_capture_1.csv.
-#include "ring_pool.hpp"
+#include "RingBufferPool.hpp"
 
 #include <cstdio>
 
